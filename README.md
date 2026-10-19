@@ -17,7 +17,7 @@ Trong Claude Code (cửa sổ `claude` trong terminal):
 /plugin marketplace add duycuf/dcuf-paper-collage
 /plugin install dcuf-paper-collage@dcuf-paper-collage
 ```
-Repo đang để riêng tư: tài khoản GitHub của bạn phải được mời vào repo và máy đã đăng nhập GitHub (`gh auth login`) thì Claude Code mới tải được.
+Cập nhật bản mới: `/plugin marketplace update dcuf-paper-collage`.
 
 ### Cách 2: chép tay
 ```bash
@@ -39,7 +39,9 @@ hoặc gọi thẳng `/dcuf-paper-collage`. Claude sẽ hỏi tên thương hi�
 
 Ví dụ có sẵn: `skills/dcuf-paper-collage/assets/examples/` (tiệm trà giả định "Trà Mộc", bản 12 s theo chương, bản 16 s ngang và dọc).
 
-## Nguồn gốc và giới hạn chia sẻ
-- Phần lõi (engine canvas cắt dán, khung phim mẫu, công cụ render, tài liệu phân tích quảng cáo San Diego Zoo "Africa Rocks") đến từ một skill "paper-collage-film" được chia sẻ trên mạng, **không ghi tác giả và giấy phép**. Bản này đã tùy biến nhiều: chạy Windows, ảnh free + tách nền thay cho AI sinh ảnh, khung dùng cho mọi thương hiệu bằng một file config, khổ dọc, bảng màu thương hiệu, font tiếng Việt, ghi công ảnh.
-- Vì vậy repo **chỉ chia sẻ riêng cho bạn bè được mời**. Vui lòng **không đăng lại công khai** hay bán lại.
+## Nguồn gốc
+- Phần lõi (engine canvas cắt dán, khung phim mẫu 10 s của kênh kaye.creatives, công cụ render, tài liệu phân tích quảng cáo San Diego Zoo "Africa Rocks") đến từ skill **"paper-collage-film"** được chia sẻ trên mạng, **không ghi tác giả và giấy phép**. Mọi công sức của phần đó thuộc về tác giả gốc.
+- Bản này tùy biến thêm: chạy Windows, ảnh free + tách nền thay cho AI sinh ảnh, khung dùng cho mọi thương hiệu bằng một file config, khổ dọc 9:16, bảng màu từ màu thương hiệu, font tiếng Việt, ghi công ảnh, hỏi đáp tiếng Việt.
+- **Nếu bạn là tác giả gốc:** mở một issue trong repo này để được ghi tên, đổi giấy phép, hoặc yêu cầu gỡ, mình sẽ làm ngay.
+- Repo chưa gắn giấy phép mở vì phần lõi chưa rõ giấy phép: dùng thoải mái cho video của bạn, nhưng đừng bán lại skill.
 - Font trong `comp/fonts/` là Google Fonts (giấy phép SIL OFL / Apache 2.0). Ảnh bạn tải về khi dùng có giấy phép riêng từng ảnh: xem `cutouts/credits_all.md` trong dự án của bạn và ghi công ảnh CC BY / BY-SA trong mô tả video.
