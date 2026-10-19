@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>title font sheet</title>
+<!-- Renders the title in N fonts with the real CLX.title treatment, one font per second.
+     URL: font_sheet.html?lines=KAYE|CREATIVES&fonts=Cinzel:900|Fraunces:italic 900|Shrikhand|Abril Fatface|Bevan|Chango|Rye|Lilita One
+     Every family in ?fonts must be loaded by the <link> below (add families there when you try new ones). -->
+<link rel="stylesheet" href="fonts/fonts.css"><!-- local woff2 with Vietnamese subsets; add fonts: node tools/fonts_fetch.mjs "Family:900" -->
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style></head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>window.FILM_SIZE=[1920,1080];</script>
+<script src="clips.js"></script><script src="engine.js"></script><script src="deco.js"></script><script src="kit.js"></script><script src="collage.js"></script><script src="collage_fx.js"></script>
+<script>
+(function(){
+  const qs = new URLSearchParams(location.search);
+  const lines = (qs.get('lines') || 'KAYE|CREATIVES').split('|');
+  const FONTS = (qs.get('fonts') || 'Cinzel:900|Fraunces:italic 900|Shrikhand|Abril Fatface|Bevan|Chango|Rye|Lilita One').split('|')
+    .map((s) => { const [fam, wt] = s.split(':'); return [`"${fam}"`, `${wt || '400'} 96px "${fam}"`, fam + (wt ? ' ' + wt : '')]; });
+  window.FONT_LIST = FONTS.map((f) => f[2]);
+  const cuts = FONTS.map((f, i) => ({ t0: i, t1: i + 1, draw: async (ctx) => {
+    await document.fonts.load(f[1], lines.join(' ') + ' Aa'); // the text itself: Vietnamese glyphs live in separate unicode-range files
+    await CL.sky(ctx, 2, { tilt: 0.9 });
+    await CLX.title(ctx, lines, 960, 520, 3, 0, { font: f[0], drop: false, zoom: 0, width: 1920 * 0.62 });
+    ctx.save(); ctx.fillStyle = '#141414'; ctx.fillRect(40, 40, 90, 90); ctx.fillStyle = '#fff'; ctx.font = '900 64px "Inter Tight"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), 85, 88); ctx.restore();
+  } }));
+  window.SCENES = { duration: FONTS.length, cuts };
+})();
+</script>
+<script src="palettes.js"></script><script src="grade.js"></script><!-- ?pal=<name> grades the sheet like the film (font_sheet.mjs passes the palette from film.config.js) -->
+<script src="film.js"></script></body></html>

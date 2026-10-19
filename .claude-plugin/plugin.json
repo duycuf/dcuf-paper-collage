@@ -1,0 +1,8 @@
+{
+  "name": "dcuf-paper-collage",
+  "version": "1.1.0",
+  "description": "Video cắt dán giấy xé (paper collage) 10–16 giây cho bất kỳ thương hiệu nào, 16:9 + 9:16, dựng bằng code. Ảnh free + tách nền trên máy, bảng màu từ màu thương hiệu, font tiếng Việt, nhạc tổng hợp.",
+  "author": { "name": "duycuf" },
+  "homepage": "https://github.com/duycuf/dcuf-paper-collage",
+  "keywords": ["video", "collage", "paper", "motion", "vietnamese"]
+}

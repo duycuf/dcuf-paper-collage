@@ -1,0 +1,1 @@
+window.CLIPS_AVAILABLE=[];

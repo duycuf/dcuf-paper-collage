@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>collage film</title>
+<!-- Latin display faces of the engine + Vietnamese-capable title / logo faces (Be Vietnam Pro, Playfair Display, Lobster, Baloo 2, Yeseva One, Unbounded, Lexend).
+     Title families: load ONE face per family (the engine draws with the face that is loaded). New face → node tools/fonts_fetch.mjs "Family:900" AND add it to film.js fonts(). -->
+<link rel="stylesheet" href="fonts/fonts.css"><!-- local woff2 with Vietnamese subsets; add fonts: node tools/fonts_fetch.mjs "Family:900" -->
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style></head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<!-- order matters: film config (sets FILM_SIZE + PALETTE) → clip list → engine → deco → kit → collage → collage_fx → devices → scenes → palettes → grade → runtime -->
+<script src="film.config.js"></script>
+<script src="clips.js"></script><script src="engine.js"></script><script src="deco.js"></script><script src="kit.js"></script><script src="collage.js"></script><script src="collage_fx.js"></script><script src="devices.js"></script><script src="scenes.js"></script><script src="palettes.js"></script><script src="grade.js"></script><script src="film.js"></script>
+</body></html>

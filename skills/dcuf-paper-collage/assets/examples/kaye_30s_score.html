@@ -1,0 +1,871 @@
+<!doctype html><html><head><meta charset="utf-8"><title>score</title></head><body>
+<script>
+/* kaye.creatives launch film — project defaults (URL query overrides any of these).
+ * style 'paper' = playful funky/indie-electronic breakbeat + torn-paper foley, locked to the film's cue map (see CUE in paper()).
+ * build = start of the 18.0–19.5 riser. drive = dB pushed into the final look-ahead limiter (rel = its release, s).
+ * ceil = output peak in dBFS (WAV; the AAC m4a overshoots by ~1 dB on paper transients). hitgain = level of the hit bus (drop/lift/rip/final/0.5 slap) that bypasses the glue compressor. stutter=0 disables the 2nd render pass.
+ * Optional overrides: window.SCORE_LEVELS = { kick: 1, rip: 1, foley: 1, ... } and window.SCORE_CUES = { car: 3.0, ... }. */
+window.SCORE_CONFIG = { preset: 'pulse', style: 'paper', build: 18.0, mid: 10.0, key: 2, seed: 7, drive: 15.2, hitgain: 0.45, rel: 0.012, ceil: -2.2 };
+</script>
+<script>
+/* launch-film score template — original, code-synthesised (no samples, no IP). Configure with window.SCORE_CONFIG before this script:
+ * { preset: 'arrival'|'pulse'|'organic'|'luxury', style: 'paper'|(generic), bpm, dur, drop, vac, lift, end, key (semitones), seed, drive, stutter }.
+ * Section map: 0→drop intro · drop→build groove · build→vac riser · vac→lift breath · lift→end climax · end→dur tail.
+ * kaye.creatives score v2 ('paper') — 120 BPM (beat 0.5 s = 12 frames @24 fps), 30.0 s, key +2 (E dorian groove → E major final).
+ * Map: 0–2 light intro (slap 0.5, click 1.5) · 2.0 DROP (paper rip) · 2–18 groove + film foley · 18–19.5 riser · 19.5–20 breath ·
+ *      20.0 LIFT (title slam) · 24.0 long rip · 26–27.5 glitch stutter (2-frame slices) · 27.5 click · 28.0 FINAL HIT · 28.6 click · 28.8 ding · fade. */
+(async function () {
+  const Q = {}; new URLSearchParams(location.search).forEach((v, k) => { Q[k] = isNaN(+v) ? v : +v; });
+  const CFG = Object.assign({ preset: 'arrival', bpm: 120, dur: 30.0, drop: 2.0, vac: 19.5, lift: 20.0, end: 28.0, key: 0, seed: 7 }, window.SCORE_CONFIG || {}, Q);
+  const SR = 48000, DUR = CFG.dur;
+  const ctx = new OfflineAudioContext(2, Math.round(SR * DUR), SR);
+  const BEAT = 60 / CFG.bpm, BAR = 4 * BEAT, DROP = CFG.drop, VAC = CFG.vac, LIFT = CFG.lift, END = CFG.end;
+  let seed = CFG.seed; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const mf = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+  // ---------- buses ----------
+  const master = ctx.createGain(); master.gain.value = 0.9;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3.5; comp.attack.value = 0.004; comp.release.value = 0.22; comp.knee.value = 8;
+  master.connect(comp); comp.connect(ctx.destination);   // master glue (Chrome adds auto make-up gain; uniform for the whole mix)
+  const dry = ctx.createGain(); dry.connect(master);
+  // reverb IR
+  function makeIR(sec, decay) {
+    const n = Math.round(SR * sec), b = ctx.createBuffer(2, n, SR);
+    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); let lp = 0; for (let i = 0; i < n; i++) { const t = i / SR; lp = lp * 0.55 + (rnd() * 2 - 1) * 0.45; d[i] = lp * Math.exp(-t / decay) * (t < 0.012 ? t / 0.012 : 1); } }
+    return b;
+  }
+  const PAPER = CFG.style === 'paper';
+  const verb = ctx.createConvolver(); verb.buffer = PAPER ? makeIR(1.6, 0.32) : makeIR(5.5, 1.25);
+  const verbIn = ctx.createGain(); verbIn.connect(verb);
+  const wet = ctx.createGain(); wet.gain.value = PAPER ? 0.36 : 0.5; verb.connect(wet); wet.connect(master);
+  // vacuum: duck dry + wet at VAC, back at LIFT
+  for (const g of [dry.gain, wet.gain]) { const v = g.value; g.setValueAtTime(v, VAC - 0.012); g.linearRampToValueAtTime(0.0, VAC + 0.012); g.setValueAtTime(0.0, LIFT - 0.002); g.linearRampToValueAtTime(v, LIFT); }
+  const special = ctx.createGain(); special.connect(master); // un-ducked (reverse breath into the lift)
+
+  // noise buffer
+  const NB = ctx.createBuffer(2, SR * 4, SR); for (let c = 0; c < 2; c++) { const d = NB.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = rnd() * 2 - 1; }
+  function noise(t0, t1) { const s = ctx.createBufferSource(); s.buffer = NB; s.loop = true; s.start(t0, rnd() * 3); s.stop(t1); return s; }
+  function out(node, { pan = 0, send = 0.3, gain = 1, to = dry } = {}) {
+    const g = ctx.createGain(); g.gain.value = gain; const p = ctx.createStereoPanner(); p.pan.value = pan;
+    node.connect(g); g.connect(p); p.connect(to); if (send > 0) { const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(verbIn); }
+    return g;
+  }
+  const shaper = (amt) => { const ws = ctx.createWaveShaper(), n = 1024, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * amt) / Math.tanh(amt); } ws.curve = c; return ws; };
+
+  // ---------- choir (formant) ----------
+  const VOW = { ah: [[800, 1, 9], [1150, 0.55, 11], [2900, 0.22, 14]], oo: [[330, 1, 8], [700, 0.35, 10], [2400, 0.08, 14]], eh: [[480, 1, 9], [1800, 0.5, 12], [2600, 0.25, 14]] };
+  // a sustained voice; returns its envelope GainNode so callers can gate it
+  function voice(m, t0, t1, { vowel = 'ah', level = 0.12, pan = 0, send = 0.45, att = 0.08, rel = 0.25, to = dry, breath = 0.04 } = {}) {
+    const f = mf(m), sum = ctx.createGain(); sum.gain.value = 1;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 4.6 + rnd() * 1.2; const lg = ctx.createGain(); lg.gain.value = f * 0.0045; lfo.connect(lg); lfo.start(t0); lfo.stop(t1 + rel);
+    for (const dt of [-9, 0, 8]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt + (rnd() - 0.5) * 4; lg.connect(o.frequency); o.connect(sum); o.start(t0); o.stop(t1 + rel); }
+    if (breath > 0) { const n = noise(t0, t1 + rel); const ng = ctx.createGain(); ng.gain.value = breath * 6; n.connect(ng); ng.connect(sum); }
+    const env = ctx.createGain(); env.gain.setValueAtTime(0, t0); env.gain.linearRampToValueAtTime(1, t0 + att); env.gain.setValueAtTime(1, t1); env.gain.linearRampToValueAtTime(0, t1 + rel);
+    const shift = m > 64 ? 1.15 : 1.0; const bank = ctx.createGain(); bank.gain.value = level;
+    for (const [ff, g, q] of VOW[vowel]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = ff * shift; bp.Q.value = q; const bg = ctx.createGain(); bg.gain.value = g; sum.connect(bp); bp.connect(bg); bg.connect(env); }
+    env.connect(bank); out(bank, { pan, send, to });
+    return env;
+  }
+  function chord(notes, t0, t1, o = {}) { return notes.map((m, i) => voice(m, t0, t1, Object.assign({ pan: (i / Math.max(1, notes.length - 1) - 0.5) * (o.width ?? 0.9) }, o))); }
+  // gated vocal stabs ("ta ta ta"): one sustained chord, gain gated per hit
+  function chops(notes, t0, t1, times, { level = 0.16, vowel = 'ah', decay = 0.045, send = 0.35, accent = () => 1 } = {}) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0);
+    for (const tc of times) { if (tc < t0 || tc >= t1) continue; const a = accent(tc); g.gain.setValueAtTime(0, tc); g.gain.linearRampToValueAtTime(a, tc + 0.005); g.gain.setTargetAtTime(0, tc + 0.012, decay); cons(tc, 0.05 * a); }
+    const bus = ctx.createGain(); bus.gain.value = 1; g.connect(bus); out(bus, { send, gain: 1 });
+    notes.forEach((m, i) => { const env = voice(m, t0, t1, { vowel, level, pan: (i / Math.max(1, notes.length - 1) - 0.5) * 1.1, send: 0, att: 0.01, rel: 0.05, to: g, breath: 0.02 }); });
+  }
+  function cons(t, lv) { const n = noise(t, t + 0.03); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4200; bp.Q.value = 1.2; const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.025); n.connect(bp); bp.connect(g); out(g, { send: 0.1, pan: (rnd() - 0.5) * 0.6 }); }
+
+  // ---------- drums / impacts ----------
+  function sub(t, { f0 = 95, f1 = 38, dur = 0.42, lv = 0.9 } = {}) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + 0.07);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const ws = shaper(1.8); o.connect(ws); ws.connect(g); out(g, { send: 0.05 }); o.start(t); o.stop(t + dur + 0.05);
+    const n = noise(t, t + 0.02); const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2000; const ng = ctx.createGain(); ng.gain.setValueAtTime(0.12 * lv, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.015); n.connect(hp); hp.connect(ng); out(ng, { send: 0 });
+  }
+  function tom(t, lv = 0.5, f = 110) {
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(f * 1.6, t); o.frequency.exponentialRampToValueAtTime(f * 0.7, t + 0.18);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32); o.connect(g); out(g, { send: 0.25, pan: (rnd() - 0.5) * 0.4 }); o.start(t); o.stop(t + 0.4);
+    const n = noise(t, t + 0.12); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800; const ng = ctx.createGain(); ng.gain.setValueAtTime(lv * 0.35, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.1); n.connect(lp); lp.connect(ng); out(ng, { send: 0.3 });
+  }
+  function tick(t, lv = 0.05, pan = 0) {
+    const n = noise(t, t + 0.02); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 7500 + rnd() * 2500; bp.Q.value = 2;
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.014); n.connect(bp); bp.connect(g); out(g, { send: 0.08, pan });
+  }
+  function impact(t, size = 1, stab = null) {
+    // boom
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(78, t); o.frequency.exponentialRampToValueAtTime(27, t + 1.4);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1.0 * size, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6 * size + 0.4);
+    const ws = shaper(2.6); o.connect(ws); ws.connect(g); out(g, { send: 0.12 }); o.start(t); o.stop(t + 3.2);
+    // crack
+    const n = noise(t, t + 1.2); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(6000, t); lp.frequency.exponentialRampToValueAtTime(300, t + 0.9);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.55 * size, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 1.0); n.connect(lp); lp.connect(ng); out(ng, { send: 0.6 });
+    // low metallic ring (struck plate)
+    for (const fr of [55.1, 82.7, 131.3, 176.9]) { const r = ctx.createOscillator(); r.type = 'triangle'; r.frequency.value = fr; const rg = ctx.createGain(); rg.gain.setValueAtTime(0.09 * size, t); rg.gain.exponentialRampToValueAtTime(0.0001, t + 2.2); r.connect(rg); out(rg, { send: 0.5, pan: (rnd() - 0.5) * 0.8 }); r.start(t); r.stop(t + 2.4); }
+    sub(t, { f0: 120, f1: 34, dur: 1.1, lv: 1.0 });
+    if (stab) chord(stab, t, t + 0.18, { vowel: 'ah', level: 0.2 * size, att: 0.004, rel: 1.4, send: 0.9, width: 1.2 });
+  }
+  function reverseSwell(tEnd, dur, { lv = 0.5, to = dry, notes = null } = {}) {
+    const t0 = tEnd - dur; const n = noise(t0, tEnd); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.setValueAtTime(400, t0); bp.frequency.exponentialRampToValueAtTime(5000, tEnd);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, tEnd - 0.01); g.gain.linearRampToValueAtTime(0, tEnd); n.connect(bp); bp.connect(g); out(g, { send: 0.2, to });
+    if (notes) notes.forEach((m, i) => { const e = voice(m, t0, tEnd - 0.01, { vowel: 'oo', level: 0.0, att: 0.01, rel: 0.01, to, send: 0.1 }); });
+  }
+  function riser(t0, t1, lv = 0.35) {
+    const n = noise(t0, t1); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 5; bp.frequency.setValueAtTime(250, t0); bp.frequency.exponentialRampToValueAtTime(7000, t1);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t1); n.connect(bp); bp.connect(g); out(g, { send: 0.4 });
+    for (const m of [62, 69, 74]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mf(m); o.detune.setValueAtTime(0, t0); o.detune.linearRampToValueAtTime(1200, t1); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(400, t0); lp.frequency.exponentialRampToValueAtTime(5000, t1); const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(0.05, t1); o.connect(lp); lp.connect(og); out(og, { send: 0.5, pan: (m - 68) / 8 }); o.start(t0); o.stop(t1); }
+  }
+  function brass(notes, t0, t1, lv = 0.12) {
+    for (const m of notes) for (const dt of [-6, 6]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mf(m); o.detune.value = dt;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2; lp.frequency.setValueAtTime(110, t0); lp.frequency.exponentialRampToValueAtTime(1600, t1 - 0.05);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t1 - 0.05); g.gain.linearRampToValueAtTime(0, t1);
+      o.connect(lp); lp.connect(g); out(g, { send: 0.4, pan: dt / 20 }); o.start(t0); o.stop(t1);
+    }
+  }
+  function drone(t0, t1, notes, lv = 0.12) {
+    for (const m of notes) { const o = ctx.createOscillator(); o.type = m < 40 ? 'sine' : 'triangle'; o.frequency.value = mf(m); o.detune.value = (rnd() - 0.5) * 10;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + 1.2); g.gain.setValueAtTime(lv, t1 - 1.0); g.gain.linearRampToValueAtTime(0, t1);
+      const trem = ctx.createOscillator(); trem.frequency.value = 0.18 + rnd() * 0.2; const tg = ctx.createGain(); tg.gain.value = lv * 0.35; trem.connect(tg); tg.connect(g.gain); trem.start(t0); trem.stop(t1);
+      o.connect(g); out(g, { send: 0.35, pan: (rnd() - 0.5) * 0.5 }); o.start(t0); o.stop(t1); }
+  }
+
+
+  // ---------- v3 sound design ----------
+  function whoosh(t, dur = 0.5, lv = 0.35, dir = 1) {
+    const t0 = t - dur; const n = noise(t0, t + 0.25); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.5;
+    bp.frequency.setValueAtTime(dir > 0 ? 300 : 6000, t0); bp.frequency.exponentialRampToValueAtTime(dir > 0 ? 6000 : 300, t + 0.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t - 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-0.9 * dir, t0); p.pan.linearRampToValueAtTime(0.9 * dir, t + 0.25);
+    n.connect(bp); bp.connect(g); g.connect(p); p.connect(dry); const sd = ctx.createGain(); sd.gain.value = 0.3; p.connect(sd); sd.connect(verbIn);
+  }
+  function revCym(tEnd, dur = 0.9, lv = 0.3) {
+    const t0 = tEnd - dur; const n = noise(t0, tEnd); const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3500;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, tEnd - 0.005); g.gain.linearRampToValueAtTime(0, tEnd);
+    n.connect(hp); hp.connect(g); out(g, { send: 0.25 });
+  }
+  function glitch(t, notes, len = 0.25, lv = 0.2) {
+    const ts = []; for (let x = t; x < t + len - 1e-4; x += 1 / 32 * 2) ts.push(x);
+    chops(notes.map((m) => m + 12), t, t + len, ts, { level: lv, decay: 0.012, send: 0.15, accent: (x) => 1 - (x - t) / len * 0.6 });
+  }
+  function alien(t0, t1, f0, f1, lv = 0.05, pan = 0) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t1);
+    const rm = ctx.createOscillator(); rm.frequency.value = 37 + rnd() * 20; const rmg = ctx.createGain(); rmg.gain.value = 0;
+    const depth = ctx.createGain(); depth.gain.value = 1; rm.connect(depth); depth.connect(rmg.gain);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + 0.3); g.gain.setValueAtTime(lv, t1 - 0.4); g.gain.linearRampToValueAtTime(0, t1);
+    o.connect(rmg); rmg.connect(g); out(g, { send: 0.8, pan }); o.start(t0); o.stop(t1); rm.start(t0); rm.stop(t1);
+  }
+  function blips(t0, t1, dens = 6, lv = 0.03) {
+    const sc = [74, 76, 79, 81, 86, 88, 91, 93];
+    for (let t = t0; t < t1; t += 0.125) { if (rnd() * 8 > dens) continue;
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = mf(sc[Math.floor(rnd() * sc.length)]);
+      const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06); o.connect(g); out(g, { send: 0.5, pan: (rnd() - 0.5) * 1.6 }); o.start(t); o.stop(t + 0.08); }
+  }
+  function tremolo(notes, t0, t1, lv = 0.05, rate = 12) {
+    for (const m of notes) for (const dt of [-7, 7]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mf(m); o.detune.value = dt;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + 0.4); g.gain.setValueAtTime(lv, t1 - 0.1); g.gain.linearRampToValueAtTime(0, t1);
+      const tr = ctx.createGain(); tr.gain.value = 0.5; const l = ctx.createOscillator(); l.frequency.value = rate; const lg = ctx.createGain(); lg.gain.value = 0.5; l.connect(lg); lg.connect(tr.gain);
+      o.connect(lp); lp.connect(tr); tr.connect(g); out(g, { send: 0.35, pan: dt / 12 }); o.start(t0); o.stop(t1); l.start(t0); l.stop(t1);
+    }
+  }
+  function taiko(t, lv = 0.8) {
+    const o = ctx.createOscillator(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.25);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7); const ws = shaper(2.2); o.connect(ws); ws.connect(g); out(g, { send: 0.35 }); o.start(t); o.stop(t + 0.8);
+    const n = noise(t, t + 0.3); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.9; const ng = ctx.createGain(); ng.gain.setValueAtTime(lv * 0.45, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.25); n.connect(bp); bp.connect(ng); out(ng, { send: 0.45 });
+  }
+  function whisper(t0, t1, lv = 0.05) {
+    const n = noise(t0, t1); const sum = ctx.createGain();
+    for (const [f, q] of [[2600, 4], [5200, 3], [1200, 5]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; n.connect(bp); bp.connect(sum); }
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t0);
+    for (let t = t0; t < t1; t += 0.35 + rnd() * 0.3) { g.gain.linearRampToValueAtTime(lv * (0.4 + rnd() * 0.6), t + 0.12); g.gain.linearRampToValueAtTime(lv * 0.1, t + 0.3); }
+    g.gain.linearRampToValueAtTime(0, t1); sum.connect(g); out(g, { send: 0.7, pan: (rnd() - 0.5) });
+  }
+  // a choir voice whose vowel drifts (ah → eh → oo …) for life
+  function choirMorph(notes, t0, t1, seq, o = {}) {
+    notes.forEach((m, i) => {
+      const f = mf(m), sum = ctx.createGain();
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 4.5 + rnd() * 1.3; const lg = ctx.createGain(); lg.gain.value = f * 0.005; lfo.connect(lg); lfo.start(t0); lfo.stop(t1 + 0.6);
+      for (const dt of [-10, -2, 7]) { const os = ctx.createOscillator(); os.type = 'sawtooth'; os.frequency.value = f; os.detune.value = dt + (rnd() - 0.5) * 5; lg.connect(os.frequency); os.connect(sum); os.start(t0); os.stop(t1 + 0.6); }
+      const env = ctx.createGain(); env.gain.setValueAtTime(0, t0); env.gain.linearRampToValueAtTime(1, t0 + (o.att ?? 0.06)); env.gain.setValueAtTime(1, t1); env.gain.linearRampToValueAtTime(0, t1 + (o.rel ?? 0.4));
+      const shift = m > 64 ? 1.15 : 1.0, bank = ctx.createGain(); bank.gain.value = o.level ?? 0.1;
+      for (let k = 0; k < 3; k++) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = VOW.ah[k][2]; const bg = ctx.createGain(); bg.gain.value = VOW.ah[k][1];
+        seq.forEach(([tt, v], j) => { const fr = VOW[v][k][0] * shift; if (j === 0) bp.frequency.setValueAtTime(fr, t0); else bp.frequency.linearRampToValueAtTime(fr, t0 + tt); });
+        sum.connect(bp); bp.connect(bg); bg.connect(env); }
+      env.connect(bank); out(bank, { pan: (i / Math.max(1, notes.length - 1) - 0.5) * (o.width ?? 1.2), send: o.send ?? 0.75 });
+    });
+  }
+
+  // ---------- v4: alien-language sound world, locked to the 120 BPM grid ----------
+  // deep "heptapod" call: a low formant groan bending down, ring-modulated, huge reverb
+  function heptapod(t, dur = 1.4, f0 = 62, f1 = 41, lv = 0.16, pan = 0) {
+    const sum = ctx.createGain();
+    for (const [type, mul, dt] of [['sawtooth', 1, -8], ['sawtooth', 1, 9], ['square', 0.5, 0]]) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0 * mul, t); o.frequency.exponentialRampToValueAtTime(f1 * mul, t + dur * 0.85); o.detune.value = dt;
+      const og = ctx.createGain(); og.gain.value = type === 'square' ? 0.35 : 0.5; o.connect(og); og.connect(sum); o.start(t); o.stop(t + dur + 0.1);
+    }
+    const rm = ctx.createGain(); rm.gain.value = 0; const mod = ctx.createOscillator(); mod.frequency.value = 19 + rnd() * 9; const md = ctx.createGain(); md.gain.value = 0.85; mod.connect(md); md.connect(rm.gain); mod.start(t); mod.stop(t + dur + 0.1);
+    const dc = ctx.createConstantSource(); dc.offset.value = 0.35; dc.connect(rm.gain); dc.start(t); dc.stop(t + dur + 0.1);
+    sum.connect(rm);
+    const env = ctx.createGain(); env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(lv, t + 0.06); env.gain.setValueAtTime(lv, t + dur * 0.55); env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const [ff, g, q] of [[260, 1, 6], [520, 0.6, 7], [1100, 0.25, 8]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(ff * 1.25, t); bp.frequency.linearRampToValueAtTime(ff * 0.8, t + dur); bp.Q.value = q; const bg = ctx.createGain(); bg.gain.value = g; rm.connect(bp); bp.connect(bg); bg.connect(env); }
+    const lo = ctx.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 160; const lg = ctx.createGain(); lg.gain.value = 0.6; rm.connect(lo); lo.connect(lg); lg.connect(env);
+    out(env, { send: 0.9, pan });
+  }
+  // minimalist bowed ostinato in 16ths (cello-like), accents on the beat
+  function ostinato(t0, t1, pat, lv = 0.06) {
+    let i = 0;
+    for (let t = t0; t < t1 - 1e-6; t += 0.125, i++) {
+      const m = pat[i % pat.length]; if (m == null) continue; const acc = i % 4 === 0 ? 1 : 0.62;
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mf(m); const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = mf(m); o2.detune.value = 7;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.4; lp.frequency.setValueAtTime(2600, t); lp.frequency.exponentialRampToValueAtTime(900, t + 0.11);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv * acc, t + 0.012); g.gain.exponentialRampToValueAtTime(lv * acc * 0.35, t + 0.09); g.gain.linearRampToValueAtTime(0, t + 0.12);
+      o.connect(lp); o2.connect(lp); lp.connect(g); out(g, { send: 0.3, pan: (i % 2 ? 0.25 : -0.25) }); o.start(t); o2.start(t); o.stop(t + 0.13); o2.stop(t + 0.13);
+    }
+  }
+  // tape-stop: a vocal stab whose pitch collapses over one beat
+  function tapeStop(t, notes, dur = 0.25, lv = 0.12) {
+    notes.forEach((m, i) => { const f = mf(m + 12), sum = ctx.createGain();
+      for (const dt of [-6, 6]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.25, t + dur); o.detune.value = dt; o.connect(sum); o.start(t); o.stop(t + dur); }
+      const env = ctx.createGain(); env.gain.setValueAtTime(lv, t); env.gain.linearRampToValueAtTime(lv * 0.7, t + dur * 0.8); env.gain.linearRampToValueAtTime(0, t + dur);
+      for (const [ff, g, q] of VOW.ah) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(ff * 1.15, t); bp.frequency.exponentialRampToValueAtTime(ff * 0.5, t + dur); bp.Q.value = q; const bg = ctx.createGain(); bg.gain.value = g; sum.connect(bp); bp.connect(bg); bg.connect(env); }
+      out(env, { send: 0.3, pan: (i / Math.max(1, notes.length - 1) - 0.5) }); });
+  }
+  // wooden creak: resonant noise sweeping down on an offbeat
+  function creak(t, lv = 0.12) {
+    const n = noise(t, t + 0.35); const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 28; bp.frequency.setValueAtTime(1400 + rnd() * 600, t); bp.frequency.exponentialRampToValueAtTime(220, t + 0.3);
+    const am = ctx.createGain(); am.gain.value = 0; const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 38; const lg = ctx.createGain(); lg.gain.value = 1; lfo.connect(lg); lg.connect(am.gain); lfo.start(t); lfo.stop(t + 0.35);
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32); n.connect(bp); bp.connect(am); am.connect(g); out(g, { send: 0.6, pan: (rnd() - 0.5) * 1.4 });
+  }
+  // bowed-metal shimmer swelling into a downbeat
+  function shimmer(t, dur = 0.9, lv = 0.03) {
+    for (const f of [2093, 2217, 2637, 3136, 3322]) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * (1 + (rnd() - 0.5) * 0.004);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t - dur); g.gain.exponentialRampToValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+      o.connect(g); out(g, { send: 0.8, pan: (rnd() - 0.5) * 1.6 }); o.start(t - dur); o.stop(t + 0.85); }
+  }
+
+  // =====================================================================================================
+  // PAPER-FUNK kit + arrangement (style=paper · kaye.creatives torn-paper collage film).
+  // Music: 120 BPM breakbeat (swung 16ths, ghost snares), funk synth bass with chromatic walk-ups, clav stabs,
+  // FM e-piano, saw pad, square-lead hook, bells. Foley (all synthesised): paper slaps (crack + flap + thud +
+  // crinkle), paper rips (grain "fibre" crackle through a sweeping band-pass, panned), UI clicks, camera shutter,
+  // Doppler fly-bys (F1 car, biplane), kaleido swirl, item pops, letter/card slaps, title slam, glitch stutter
+  // (2nd render pass, 2-frame slices in 6 styles = the 6 logo flash looks), subscribe click + desk-bell ding.
+  // Per-layer trims: window.SCORE_LEVELS = { kick: 1, snare: 1, ... } (see LVL). Cue times: window.SCORE_CUES.
+  // =====================================================================================================
+  const biq = (type, f, q = 0.707) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const osc = (type, f, det = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = det; return o; };
+  const LVL = Object.assign({ kick: 1, snare: 1, ghost: 1, clap: 1, hat: 1, shaker: 1, bass: 1, clav: 1, keys: 1, pad: 1, lead: 1, bell: 1, arp: 1,
+    crash: 1, riser: 1, roll: 1, hit: 1, sparkle: 1, slap: 1, rip: 1, click: 1, shutter: 1, pass: 1, whoosh: 1, swirl: 1, pop: 1, letter: 1, card: 1,
+    scratch: 1, ding: 1, groove: 1, foley: 1, stutter: 1 }, window.SCORE_LEVELS || {});
+  for (const [k, v] of Object.entries(Q)) if (k.startsWith('lv_')) LVL[k.slice(3)] = +v;   // URL trims, e.g. ?lv_foley=0 (stems / debugging)
+  const LC = (k) => LVL[k] ?? 1, FOL = () => LC('foley');
+  const CUE = Object.assign({ slap: 0.5, press: 1.5, car: 3.0, shutter: 5.0, irisFrom: 6.0, iris: 8.0, swirl: [8.0, 10.0], fly: 9.5, plane: 11.0,
+    pops: [12.0, 12.5, 13.0, 13.25, 13.5, 13.75], letters: [14.0, 15.4, 0.125], cards: [16.0, 18.0], rip: 24.0, ripLen: 0.4,
+    stut: [26.0, 27.5], click2: 27.5, subClick: 28.6, ding: 28.8 }, window.SCORE_CUES || {});
+  const SW = 0.016; // swing: odd 16ths land 16 ms late (never on a film cue — cues sit on even 16ths)
+
+  // ---- groove bus: drums + instruments → low-pass (intro "next room") → peaking swirl (kaleido) → gOut → dry (+ reverb) ----
+  // (no bus compressor: Chrome's DynamicsCompressor adds auto make-up gain and a 6 ms look-ahead delay, which made levels unpredictable)
+  const G = ctx.createGain(), PUMP = ctx.createGain(); PUMP.connect(G);
+  const gLP = biq('lowpass', 20000, 0.8), gSW = biq('peaking', 900, 2.5); gSW.gain.value = 0;
+  const gOut = ctx.createGain(); gOut.gain.value = LC('groove'); G.connect(gLP); gLP.connect(gSW); gSW.connect(gOut); gOut.connect(dry);
+  const gVerb = ctx.createGain(); gVerb.gain.value = 0.12; gOut.connect(gVerb); gVerb.connect(verbIn);
+  // hit bus: the big hits (drop, lift, rip, final, 0.5 slap) skip the master glue compressor so they stay on top of the groove;
+  // gain ≈ the compressor's auto make-up so both paths match at low level. Peaks are caught by the look-ahead limiter.
+  // (delayed 6 ms = the compressor's fixed look-ahead, so both paths stay aligned; the whole render is shifted back 6 ms at the end)
+  const HIT = ctx.createGain(); HIT.gain.value = 2.2 * (CFG.hitgain ?? 1); const hitDelay = ctx.createDelay(0.05); hitDelay.delayTime.value = 0.006; HIT.connect(hitDelay); hitDelay.connect(ctx.destination);
+  const pumpAt = (t, depth = 0.4, rec = 0.07) => { PUMP.gain.setValueAtTime(1, t); PUMP.gain.linearRampToValueAtTime(1 - depth, t + 0.008); PUMP.gain.setTargetAtTime(1, t + 0.008, rec); };
+
+  // ---------------- drums ----------------
+  function kick(t, lv = 0.8, { f0 = 150, f1 = 46, dur = 0.26, click = 0.35, sat = 1.9, to = G } = {}) {
+    lv *= LC('kick'); if (!(lv > 0)) return; const o = osc('sine', f0); o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + 0.05);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.002); g.gain.setValueAtTime(lv, t + 0.025); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const ws = shaper(sat); o.connect(ws); ws.connect(g); out(g, { send: 0, to }); o.start(t); o.stop(t + dur + 0.05);
+    if (click) { const n = noise(t, t + 0.012); const hp = biq('highpass', 2600); const ng = ctx.createGain(); ng.gain.setValueAtTime(click * lv, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.007); n.connect(hp); hp.connect(ng); out(ng, { send: 0, to }); }
+  }
+  // 808-ish sub tail under the big hits
+  function boom(t, lv = 0.5, dur = 1.1, { f0 = 70, f1 = 37, to = dry } = {}) {
+    const o = osc('sine', f0); o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + 0.35);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const ws = shaper(1.4); o.connect(ws); ws.connect(g); out(g, { send: 0.03, to }); o.start(t); o.stop(t + dur + 0.05);
+  }
+  // breakbeat snare: pitched body + bright wires
+  function snare(t, lv = 0.5, pan = 0, { to = G, tone = 190, dec = 0.17, send = 0 } = {}) {
+    lv *= LC('snare'); if (!(lv > 0)) return;
+    const o = osc('triangle', tone * 1.5); o.frequency.setValueAtTime(tone * 1.5, t); o.frequency.exponentialRampToValueAtTime(tone, t + 0.03);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(lv * 0.9, t + 0.002); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(og); out(og, { pan, send, to }); o.start(t); o.stop(t + 0.1);
+    const n = noise(t, t + dec + 0.03); const hp = biq('highpass', 1100); const pk = biq('peaking', 4200, 0.9); pk.gain.value = 6;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(lv, t + 0.0015); ng.gain.exponentialRampToValueAtTime(lv * 0.3, t + 0.03); ng.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+    n.connect(hp); hp.connect(pk); pk.connect(ng); out(ng, { pan, send, to });
+  }
+  function clap(t, lv = 0.4, pan = 0, { send = 0.15, f = 1400, to = G } = {}) {
+    lv *= LC('clap'); if (!(lv > 0)) return; const n = noise(t, t + 0.24); const hp = biq('highpass', 650); const bp = biq('bandpass', f, 1.3);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+    for (const d of [0, 0.010, 0.021]) { g.gain.setValueAtTime(lv, t + d); g.gain.exponentialRampToValueAtTime(lv * 0.15, t + d + 0.009); }
+    g.gain.setValueAtTime(lv * 0.9, t + 0.031); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    n.connect(hp); hp.connect(bp); bp.connect(g); out(g, { pan, send, to });
+  }
+  function hat(t, lv = 0.04, pan = 0, open = 0, to = G) {
+    lv *= LC('hat'); if (!(lv > 0)) return; const d = open ? 0.16 : 0.028; const n = noise(t, t + d + 0.02); const hp = biq('highpass', 7200); const pk = biq('peaking', 10500, 1); pk.gain.value = 5;
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d); n.connect(hp); hp.connect(pk); pk.connect(g); out(g, { pan, send: 0, to });
+  }
+  function shaker(t, lv = 0.02, pan = 0, to = G) {
+    lv *= LC('shaker'); if (!(lv > 0)) return; const n = noise(t, t + 0.08); const bp = biq('bandpass', 6000, 1.3); const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07); n.connect(bp); bp.connect(g); out(g, { pan, send: 0, to });
+  }
+  function crash(t, lv = 0.12, dur = 1.8, to = dry) {
+    lv *= LC('crash'); if (!(lv > 0)) return; const n = noise(t, t + dur); const hp = biq('highpass', 4300); const pk = biq('peaking', 7800, 0.8); pk.gain.value = 4;
+    const g = ctx.createGain(); g.gain.setValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(lv * 0.3, t + 0.18); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); n.connect(hp); hp.connect(pk); pk.connect(g); out(g, { send: 0.3, to });
+  }
+
+  // ---------------- instruments ----------------
+  // funk synth bass: saw + square + sine through a plucky resonant low-pass
+  function bassNote(m, t, len, lv = 0.2, { to = PUMP, bright = 2000, q = 6 } = {}) {
+    lv *= LC('bass'); if (!(lv > 0)) return; const f = mf(m), sum = ctx.createGain(); len = Math.max(0.04, len);
+    const os = [osc('sawtooth', f, -5), osc('square', f, 4), osc('sine', f)]; const gs = [0.55, 0.3, 0.7];
+    os.forEach((o, i) => { const og = ctx.createGain(); og.gain.value = gs[i]; o.connect(og); og.connect(sum); o.start(t); o.stop(t + len + 0.06); });
+    const lp = biq('lowpass', bright, q); lp.frequency.setValueAtTime(bright, t); lp.frequency.exponentialRampToValueAtTime(220, t + Math.min(0.14, len + 0.04));
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.003); g.gain.linearRampToValueAtTime(lv * 0.8, t + Math.max(0.01, len - 0.03)); g.gain.linearRampToValueAtTime(0, t + len + 0.03);
+    sum.connect(lp); lp.connect(g); out(g, { send: 0, to });
+  }
+  // clavinet stab: 22 % pulse wave through a closing band-pass
+  const PULSE = (() => { const N = 48, re = new Float32Array(N), im = new Float32Array(N), d = 0.22; for (let n = 1; n < N; n++) { re[n] = (2 / (n * Math.PI)) * Math.sin(2 * Math.PI * n * d); im[n] = (2 / (n * Math.PI)) * (1 - Math.cos(2 * Math.PI * n * d)); } return ctx.createPeriodicWave(re, im); })();
+  function clav(notes, t, lv = 0.04, { dec = 0.1, pan = 0, to = PUMP, bright = 2600, send = 0.05 } = {}) {
+    lv *= LC('clav'); if (!(lv > 0)) return;
+    notes.forEach((m, i) => { const o = ctx.createOscillator(); o.setPeriodicWave(PULSE); o.frequency.value = mf(m); o.detune.value = (i % 2 ? 4 : -4);
+      const hp = biq('highpass', 260); const bp = biq('bandpass', bright, 0.9); bp.frequency.setValueAtTime(bright * 1.6, t); bp.frequency.exponentialRampToValueAtTime(bright * 0.6, t + dec);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.0015); g.gain.exponentialRampToValueAtTime(lv * 0.35, t + dec * 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+      o.connect(hp); hp.connect(bp); bp.connect(g); out(g, { pan: pan + (i / Math.max(1, notes.length - 1) - 0.5) * 0.5, send, to }); o.start(t); o.stop(t + dec + 0.02); });
+  }
+  // FM electric piano (tine attack, soft decay)
+  function keys(notes, t, len, lv = 0.03, { pan = 0, to = PUMP, send = 0.25, idx = 2.2 } = {}) {
+    lv *= LC('keys'); if (!(lv > 0)) return;
+    notes.forEach((m, i) => { const f = mf(m), t1 = t + len, vs = ctx.createGain();
+      const car = osc('sine', f), mod = osc('sine', f), mg = ctx.createGain(); mg.gain.setValueAtTime(f * idx, t); mg.gain.setTargetAtTime(f * 0.15, t, 0.18); mod.connect(mg); mg.connect(car.frequency); car.connect(vs);
+      const tine = osc('sine', f * 7.1), tg = ctx.createGain(); tg.gain.setValueAtTime(0.22, t); tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.05); tine.connect(tg); tg.connect(vs);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.003); g.gain.setTargetAtTime(lv * 0.3, t + 0.004, 0.3); g.gain.setTargetAtTime(0, t1, 0.06);
+      vs.connect(g); out(g, { pan: pan + (i / Math.max(1, notes.length - 1) - 0.5) * 0.7, send, to });
+      for (const o of [car, mod, tine]) { o.start(t); o.stop(t1 + 0.4); } });
+  }
+  function pluck(m, t, lv = 0.05, pan = 0, { dec = 0.17, bright = 5200, to = PUMP, send = 0.25 } = {}) {
+    const f = mf(m), sum = ctx.createGain(); const a = osc('sawtooth', f, -5), b = osc('square', f, 6); const bg = ctx.createGain(); bg.gain.value = 0.5;
+    a.connect(sum); b.connect(bg); bg.connect(sum); a.start(t); b.start(t); a.stop(t + dec + 0.05); b.stop(t + dec + 0.05);
+    const lp = biq('lowpass', bright, 2); lp.frequency.setValueAtTime(bright, t); lp.frequency.exponentialRampToValueAtTime(520, t + dec * 0.85);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+    sum.connect(lp); lp.connect(g); out(g, { pan, send, to });
+  }
+  // glockenspiel bell (inharmonic bar partials)
+  function bell(m, t, lv = 0.04, pan = 0, dec = 0.9, send = 0.5, to = dry) {
+    lv *= LC('bell'); if (!(lv > 0)) return; const f = mf(m);
+    for (const [r, a, d] of [[1, 1, 1], [2.76, 0.42, 0.38], [5.4, 0.2, 0.2], [2, 0.18, 0.6]]) { if (f * r > 17000) continue;
+      const o = osc('sine', f * r); const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv * a, t + 0.0015); g.gain.exponentialRampToValueAtTime(0.0001, t + dec * d);
+      o.connect(g); out(g, { pan, send, to }); o.start(t); o.stop(t + dec * d + 0.02); }
+  }
+  function padChord(notes, t0, t1, lv = 0.03, { cut = 1700, cutTo = null, att = 0.05, rel = 0.25, to = PUMP, width = 1.1, send = 0.35 } = {}) {
+    lv *= LC('pad'); if (!(lv > 0)) return;
+    notes.forEach((m, i) => { const f = mf(m);
+      const lp = biq('lowpass', cut, 0.8); if (cutTo) { lp.frequency.setValueAtTime(cut, t0); lp.frequency.exponentialRampToValueAtTime(cutTo, t1); }
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + att); g.gain.setValueAtTime(lv, t1); g.gain.linearRampToValueAtTime(0, t1 + rel);
+      for (const dt of [-9, 8]) { const o = osc('sawtooth', f, dt + (rnd() - 0.5) * 4); o.connect(lp); o.start(t0); o.stop(t1 + rel + 0.02); }
+      lp.connect(g); out(g, { pan: (i / Math.max(1, notes.length - 1) - 0.5) * width, send, to }); });
+  }
+  // square-lead hook: [[t, midi, len], ...] with glide between legato notes and delayed vibrato
+  function leadLine(notes, lv = 0.06, { oct = 0, pan = 0, send = 0.28, bright = 3400, to = G } = {}) {
+    lv *= LC('lead'); if (!(lv > 0)) return;
+    notes.forEach(([t, m, len], i) => {
+      const f = mf(m + oct), prev = notes[i - 1], legato = prev && t - (prev[0] + prev[2]) < 0.06, fp = legato ? mf(prev[1] + oct) : f;
+      const sum = ctx.createGain(); const os = [osc('square', f, -7), osc('square', f, 7), osc('sawtooth', f * 2, 0)]; const gs = [0.5, 0.5, 0.12];
+      const vib = osc('sine', 5.6); const vg = ctx.createGain(); vg.gain.setValueAtTime(0, t); vg.gain.setValueAtTime(0, t + 0.1); vg.gain.linearRampToValueAtTime(f * 0.007, t + 0.28); vib.connect(vg); vib.start(t); vib.stop(t + len + 0.08);
+      os.forEach((o, k) => { const mul = k === 2 ? 2 : 1; o.frequency.setValueAtTime(fp * mul, t); if (legato) o.frequency.exponentialRampToValueAtTime(f * mul, t + 0.03); vg.connect(o.frequency); const og = ctx.createGain(); og.gain.value = gs[k]; o.connect(og); og.connect(sum); o.start(t); o.stop(t + len + 0.08); });
+      const lp = biq('lowpass', bright * 1.7, 1.4); lp.frequency.setValueAtTime(bright * 1.7, t); lp.frequency.exponentialRampToValueAtTime(bright, t + 0.1);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.006); g.gain.linearRampToValueAtTime(lv * 0.75, t + 0.09); g.gain.setValueAtTime(lv * 0.75, t + len); g.gain.linearRampToValueAtTime(0, t + len + 0.06);
+      sum.connect(lp); lp.connect(g); out(g, { pan, send, to });
+    });
+  }
+  // pitched synth riser + noise sweep (build)
+  function synthRiser(t0, t1, notes, lv = 0.04) {
+    lv *= LC('riser'); if (!(lv > 0)) return;
+    notes.forEach((m, i) => { const o = osc('sawtooth', mf(m)); o.detune.setValueAtTime(0, t0); o.detune.linearRampToValueAtTime(1200, t1); const lp = biq('lowpass', 500, 1.5); lp.frequency.setValueAtTime(500, t0); lp.frequency.exponentialRampToValueAtTime(6500, t1);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t1 - 0.01); g.gain.linearRampToValueAtTime(0, t1); o.connect(lp); lp.connect(g); out(g, { send: 0.35, pan: (i / Math.max(1, notes.length - 1) - 0.5) * 1.2 }); o.start(t0); o.stop(t1 + 0.01); });
+    const n = noise(t0, t1); const bp = biq('bandpass', 300, 3.5); bp.frequency.setValueAtTime(300, t0); bp.frequency.exponentialRampToValueAtTime(8500, t1);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv * 4, t1 - 0.01); g.gain.linearRampToValueAtTime(0, t1); n.connect(bp); bp.connect(g); out(g, { send: 0.3 });
+  }
+  // glitter tail: ascending bell run, thinning twinkles, trembling high cluster (pentatonic, pre-transposition)
+  function sparkle(t, dur = 1.9, lv = 0.035, pent = [74, 76, 78, 81, 83]) {
+    lv *= LC('sparkle'); if (!(lv > 0)) return;
+    for (let k = 0; k < 14; k++) bell(K(pent[k % 5] + 12 * Math.floor(k / 5)), t + 0.02 + k * 0.03, lv * (0.55 + 0.45 * k / 13), (k % 2 ? 1 : -1) * (0.2 + 0.6 * k / 13), 0.9, 0.6);
+    for (let k = 0; k < 26; k++) { const x = Math.pow(rnd(), 1.6) * dur; bell(K(pent[Math.floor(rnd() * 5)] + 12 * (1 + Math.floor(rnd() * 2))), t + 0.35 + x, lv * 0.7 * (1 - 0.7 * x / dur), (rnd() - 0.5) * 1.8, 0.7, 0.7); }
+    for (const m of [86, 90, 93, 98]) { const o = osc('sine', mf(K(m)), (rnd() - 0.5) * 8); const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lv * 0.5, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const tr = ctx.createGain(); tr.gain.value = 0.6; const l = osc('sine', 5.5 + rnd() * 2); const lg = ctx.createGain(); lg.gain.value = 0.4; l.connect(lg); lg.connect(tr.gain);
+      o.connect(tr); tr.connect(g); out(g, { send: 0.85, pan: (rnd() - 0.5) * 1.6 }); o.start(t); o.stop(t + dur + 0.02); l.start(t); l.stop(t + dur + 0.02); }
+  }
+  // vinyl scratch ("wicka"): saw + noise whose pitch follows a back-and-forth record motion
+  function scratch(t, dur = 0.25, lv = 0.06, { m = 62, pan = 0, strokes = 2 } = {}) {
+    lv *= LC('scratch'); if (!(lv > 0)) return; const f = mf(m), N = 128, fc = new Float32Array(N), flc = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const x = i / (N - 1); fc[i] = f * (0.12 + 1.7 * Math.abs(Math.sin(Math.PI * strokes * x))); flc[i] = Math.min(8000, fc[i] * 2.4); }
+    const o = osc('sawtooth', f); o.frequency.setValueCurveAtTime(fc, t, dur); const n = noise(t, t + dur); const nb = biq('bandpass', 1800, 0.9);
+    const sum = ctx.createGain(), og = ctx.createGain(), ng = ctx.createGain(); og.gain.value = 0.6; ng.gain.value = 0.5; o.connect(og); og.connect(sum); n.connect(nb); nb.connect(ng); ng.connect(sum);
+    const fl = biq('bandpass', 1200, 1.1); fl.frequency.setValueCurveAtTime(flc, t, dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.01); g.gain.setValueAtTime(lv, t + dur - 0.02); g.gain.linearRampToValueAtTime(0, t + dur);
+    sum.connect(fl); fl.connect(g); out(g, { pan, send: 0.12, to: G }); o.start(t); o.stop(t + dur + 0.01);
+  }
+
+  // ---------------- paper / foley ----------------
+  // paper-fibre crackle: grains of noise (0.4–4 ms) with random amplitude; dens = share of loud grains
+  function crackleBuf(dur, dens = 0.55) {
+    const n = Math.max(64, Math.round(SR * dur)), b = ctx.createBuffer(2, n, SR);
+    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); let i = 0;
+      while (i < n) { const gl = Math.round(SR * (0.0004 + rnd() * 0.0036)), a = rnd() < dens ? Math.pow(rnd(), 0.6) : rnd() * 0.07;
+        for (let j = 0; j < gl && i < n; j++, i++) d[i] = (rnd() * 2 - 1) * a * Math.sin(Math.PI * j / gl); } }
+    return b;
+  }
+  // a sheet / cut-out slapped onto paper: crack + flap of air + (thud) + crinkle tail
+  function paperSlap(t, lv = 0.5, { size = 1, pan = 0, to = dry, send = 0.12, tone = 1 } = {}) {
+    lv *= LC('slap') * FOL(); if (!(lv > 0)) return;
+    const n1 = noise(t, t + 0.03); const hp = biq('highpass', 1500 * tone); const pk = biq('peaking', 3200 * tone, 1.2); pk.gain.value = 6;
+    const g1 = ctx.createGain(); g1.gain.setValueAtTime(0, t); g1.gain.linearRampToValueAtTime(lv * 0.8, t + 0.001); g1.gain.exponentialRampToValueAtTime(0.0001, t + 0.012 + 0.006 * size);
+    n1.connect(hp); hp.connect(pk); pk.connect(g1); out(g1, { pan, send, to });
+    const n2 = noise(t, t + 0.2); const bp = biq('bandpass', 900 * tone / Math.sqrt(size), 1.1);
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0, t); g2.gain.linearRampToValueAtTime(lv * 0.75, t + 0.003); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + 0.045 * size);
+    n2.connect(bp); bp.connect(g2); out(g2, { pan, send, to });
+    if (size >= 0.5) { const o = osc('sine', 170); o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.06 * size + 0.02);
+      const g3 = ctx.createGain(); g3.gain.setValueAtTime(0, t); g3.gain.linearRampToValueAtTime(lv * 0.9 * Math.min(1.6, size), t + 0.002); g3.gain.exponentialRampToValueAtTime(0.0001, t + 0.07 + 0.08 * size);
+      o.connect(g3); out(g3, { pan: pan * 0.5, send: 0.02, to }); o.start(t); o.stop(t + 0.2 + 0.1 * size); }
+    const src = ctx.createBufferSource(); src.buffer = crackleBuf(0.12 * size + 0.05, 0.35); const hp2 = biq('highpass', 2200);
+    const g4 = ctx.createGain(); g4.gain.setValueAtTime(lv * 0.35, t + 0.006); g4.gain.exponentialRampToValueAtTime(0.0001, t + 0.12 * size + 0.05);
+    src.connect(hp2); hp2.connect(g4); out(g4, { pan: Math.max(-1, Math.min(1, pan + (rnd() - 0.5) * 0.3)), send: send * 1.2, to }); src.start(t + 0.006);
+  }
+  // tearing paper: strong first-fibre snap, then crackle through a rising band-pass, panned p0 → p1
+  function paperRip(t0, dur, lv = 0.5, { p0 = -0.6, p1 = 0.6, f0 = 800, f1 = 3600, onset = 1, dens = 0.55, body = 0.45, dense = 0.5, soft = 1, to = dry, send = 0.15 } = {}) {
+    lv *= LC('rip') * FOL(); if (!(lv > 0)) return; const t1 = t0 + dur;
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(p0, t0); p.pan.linearRampToValueAtTime(p1, t1); p.connect(to);
+    if (send) { const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(verbIn); }
+    const env = ctx.createGain(); env.gain.setValueAtTime(0, t0); env.gain.linearRampToValueAtTime(lv * soft, t0 + 0.004); env.gain.linearRampToValueAtTime(lv * 0.6, t0 + Math.min(0.12, dur * 0.4));
+    env.gain.setValueAtTime(lv * 0.6, t1 - 0.07); env.gain.linearRampToValueAtTime(lv * 0.85, t1 - 0.02); env.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.07); env.connect(p);
+    const src = ctx.createBufferSource(); src.buffer = crackleBuf(dur + 0.1, dens);
+    const hp = biq('highpass', 380), bp = biq('bandpass', f0, 0.9); bp.frequency.setValueAtTime(f0, t0); bp.frequency.exponentialRampToValueAtTime(f1, t1);
+    const bpg = ctx.createGain(); bpg.gain.value = 1.6; src.connect(hp); hp.connect(bp); bp.connect(bpg); bpg.connect(env);
+    const hf = biq('highpass', 3000), hfg = ctx.createGain(); hfg.gain.value = 0.45; hp.connect(hf); hf.connect(hfg); hfg.connect(env);   // fibre detail
+    src.start(t0); src.stop(t1 + 0.1);
+    if (dense) { const n = noise(t0, t0 + 0.2); const bp2 = biq('bandpass', 2000, 0.7); const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv * dense, t0 + 0.003); g.gain.setTargetAtTime(0, t0 + 0.04, 0.07); n.connect(bp2); bp2.connect(g); g.connect(p); }  // dense first tear
+    if (body) { const n = noise(t0, t1 + 0.08); const lp = biq('lowpass', 520, 0.8); const ng = ctx.createGain(); ng.gain.value = body * 2.2; n.connect(lp); lp.connect(ng); ng.connect(env); }  // low flap of the sheet
+    if (onset) { const n = noise(t0, t0 + 0.03); const hp3 = biq('highpass', 1200), pk = biq('peaking', 2600, 1); pk.gain.value = 6; const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv * onset, t0 + 0.001); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.022);
+      n.connect(hp3); hp3.connect(pk); pk.connect(g); g.connect(p); }
+  }
+  // mouse / paper-button click (press + release)
+  function uiClick(t, lv = 0.3, pan = 0, { to = dry } = {}) {
+    lv *= LC('click') * FOL(); if (!(lv > 0)) return;
+    for (const [dt, a] of [[0, 1], [0.024, 0.45]]) { const tt = t + dt;
+      const n = noise(tt, tt + 0.012); const bp = biq('bandpass', 5200, 1.6); const g = ctx.createGain(); g.gain.setValueAtTime(lv * a, tt); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.006); n.connect(bp); bp.connect(g); out(g, { pan, send: 0.05, to });
+      const o = osc('sine', 2200); o.frequency.setValueAtTime(2200, tt); o.frequency.exponentialRampToValueAtTime(1300, tt + 0.015); const og = ctx.createGain(); og.gain.setValueAtTime(lv * a * 0.7, tt); og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.02); o.connect(og); out(og, { pan, send: 0.05, to }); o.start(tt); o.stop(tt + 0.025); }
+  }
+  // soft camera shutter: click – curtain whirr – click, small mirror thump
+  function shutter(t, lv = 0.3, pan = 0) {
+    lv *= LC('shutter') * FOL(); if (!(lv > 0)) return;
+    const clk = (tt, a, f) => { const n = noise(tt, tt + 0.02); const bp = biq('bandpass', f, 2.2); const g = ctx.createGain(); g.gain.setValueAtTime(lv * a, tt); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.01); n.connect(bp); bp.connect(g); out(g, { pan, send: 0.15 }); };
+    clk(t, 1, 3400); clk(t + 0.004, 0.5, 1500);
+    const n = noise(t, t + 0.08); const bp = biq('bandpass', 1800, 3); bp.frequency.setValueAtTime(1800, t); bp.frequency.linearRampToValueAtTime(2800, t + 0.065);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t + 0.006); g.gain.linearRampToValueAtTime(lv * 0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.068); n.connect(bp); bp.connect(g); out(g, { pan, send: 0.15 });
+    clk(t + 0.075, 0.75, 2800); clk(t + 0.079, 0.4, 1200);
+    const o = osc('sine', 420); o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(180, t + 0.03); const og = ctx.createGain(); og.gain.setValueAtTime(lv * 0.35, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.04); o.connect(og); out(og, { pan, send: 0.1 }); o.start(t); o.stop(t + 0.05);
+  }
+  // noise swoosh peaking at t (band-pass up then down, panned across)
+  function swoosh(t, { pre = 0.35, post = 0.22, lv = 0.25, dir = 1, f0 = 350, f1 = 5000, q = 1.4, to = dry, send = 0.25, pan = 0.85 } = {}) {
+    lv *= LC('whoosh') * FOL(); if (!(lv > 0)) return; const t0 = t - pre, t1 = t + post; const n = noise(t0, t1 + 0.02);
+    const bp = biq('bandpass', f0, q); bp.frequency.setValueAtTime(f0, t0); bp.frequency.exponentialRampToValueAtTime(f1, t); bp.frequency.exponentialRampToValueAtTime(Math.max(150, f0 * 1.5), t1);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t); g.gain.exponentialRampToValueAtTime(0.0001, t1);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-pan * dir, t0); p.pan.linearRampToValueAtTime(pan * dir, t1);
+    n.connect(bp); bp.connect(g); g.connect(p); p.connect(to); if (send) { const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(verbIn); }
+  }
+  // rising push-in whoosh that ends exactly at t1
+  function riseWhoosh(t0, t1, lv = 0.2, { to = dry, f1 = 7000 } = {}) {
+    lv *= LC('whoosh') * FOL(); if (!(lv > 0)) return; const n = noise(t0, t1 + 0.05); const bp = biq('bandpass', 250, 1.6); bp.frequency.setValueAtTime(250, t0); bp.frequency.exponentialRampToValueAtTime(f1, t1);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t1 - 0.01); g.gain.linearRampToValueAtTime(0, t1 + 0.03);
+    n.connect(bp); bp.connect(g); out(g, { send: 0.3, to });
+    const o = osc('sine', 180); o.frequency.setValueAtTime(180, t0); o.frequency.exponentialRampToValueAtTime(1400, t1); const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t0); og.gain.exponentialRampToValueAtTime(lv * 0.22, t1 - 0.01); og.gain.linearRampToValueAtTime(0, t1 + 0.02); o.connect(og); out(og, { send: 0.3, to }); o.start(t0); o.stop(t1 + 0.03);
+  }
+  // Doppler fly-by: a source on a straight line, closest at tc. v = speed/c, d = closest distance (in seconds of travel).
+  // tones: [[freq at rest, type, gain]]; am/amDepth: propeller chop; air: wind noise level.
+  function flyBy(tc, t0, t1, { v = 0.14, d = 0.2, lv = 0.3, pan = 0.9, tones = [], am = 0, amDepth = 0, lp = 2600, air = 0.5, airF = 1800, sharp = 1.3, to = dry, send = 0.2 } = {}) {
+    lv *= LC('pass') * FOL(); if (!(lv > 0)) return; const N = 512, D = t1 - t0;
+    const fr = new Float32Array(N), gn = new Float32Array(N), pn = new Float32Array(N), cut = new Float32Array(N), af = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const x = t0 + D * i / (N - 1) - tc, r = Math.sqrt(x * x + d * d); fr[i] = 1 / (1 + v * x / r); gn[i] = Math.pow(d / r, sharp); pn[i] = pan * x / r; cut[i] = lp * (0.3 + 0.7 * d / r) * fr[i]; af[i] = airF * fr[i] * (0.5 + 0.9 * d / r); }
+    const EG = 32; for (let i = 0; i < EG; i++) { gn[i] *= i / EG; gn[N - 1 - i] *= i / EG; }
+    const env = ctx.createGain(); env.gain.value = 0; env.gain.setValueCurveAtTime(gn, t0, D);
+    const p = ctx.createStereoPanner(); p.pan.setValueCurveAtTime(pn, t0, D); env.connect(p); p.connect(to); if (send) { const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(verbIn); }
+    const tsum = ctx.createGain(); const lpf = biq('lowpass', lp, 1.2); lpf.frequency.setValueCurveAtTime(cut, t0, D); const tl = ctx.createGain(); tl.gain.value = lv;
+    let head = tsum;
+    if (am) { const amg = ctx.createGain(); amg.gain.value = 1 - amDepth / 2; const l = osc('square', am); l.frequency.setValueCurveAtTime(fr.map((k) => k * am), t0, D); const lg = ctx.createGain(); lg.gain.value = amDepth / 2; l.connect(lg); lg.connect(amg.gain); l.start(t0); l.stop(t1 + 0.01); tsum.connect(amg); head = amg; }
+    head.connect(lpf); lpf.connect(tl); tl.connect(env);
+    for (const [f, type, gv] of tones) { const o = osc(type, f); o.frequency.setValueCurveAtTime(fr.map((k) => k * f), t0, D); const og = ctx.createGain(); og.gain.value = gv; o.connect(og); og.connect(tsum); o.start(t0); o.stop(t1 + 0.01); }
+    if (air) { const n = noise(t0, t1 + 0.01); const nb = biq('bandpass', airF, 0.8); nb.frequency.setValueCurveAtTime(af, t0, D); const ng = ctx.createGain(); ng.gain.value = lv * air * 2.2; n.connect(nb); nb.connect(ng); ng.connect(env); }
+  }
+  // kaleidoscope swirl: noise through three LFO-swept resonant band-passes, panned in circles that speed up
+  function swirl(t0, t1, lv = 0.1) {
+    lv *= LC('swirl') * FOL(); if (!(lv > 0)) return; const n = noise(t0, t1 + 0.1), sum = ctx.createGain();
+    for (const [f, q, rate] of [[600, 6, 0.9], [1500, 7, 1.3], [3300, 8, 1.7]]) { const bp = biq('bandpass', f, q); const l = osc('sine', rate); const lg = ctx.createGain(); lg.gain.value = f * 0.6; l.connect(lg); lg.connect(bp.frequency); l.start(t0); l.stop(t1 + 0.1); n.connect(bp); bp.connect(sum); }
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t0 + (t1 - t0) * 0.5); g.gain.exponentialRampToValueAtTime(lv * 0.6, t1 - 0.1); g.gain.linearRampToValueAtTime(0, t1 + 0.08);
+    const p = ctx.createStereoPanner(); const pl = osc('sine', 0.6); pl.frequency.setValueAtTime(0.6, t0); pl.frequency.linearRampToValueAtTime(2.4, t1); const pg = ctx.createGain(); pg.gain.value = 0.85; pl.connect(pg); pg.connect(p.pan); pl.start(t0); pl.stop(t1 + 0.1);
+    sum.connect(g); g.connect(p); p.connect(dry); const s = ctx.createGain(); s.gain.value = 0.4; p.connect(s); s.connect(verbIn);
+  }
+  function flick(t, lv = 0.08, pan = 0) {
+    lv *= LC('slap') * FOL(); if (!(lv > 0)) return; const n = noise(t, t + 0.02); const bp = biq('bandpass', 2800 + rnd() * 1800, 1.5); const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.001); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.012); n.connect(bp); bp.connect(g); out(g, { pan, send: 0.15 });
+  }
+  function slide(t0, t1, lv = 0.06, { p0 = 0.6, p1 = 0, f = 1600 } = {}) {
+    lv *= FOL(); if (!(lv > 0)) return; const n = noise(t0, t1 + 0.05); const hp = biq('highpass', 500), bp = biq('bandpass', f, 0.7); const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(lv, t0 + (t1 - t0) * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t1);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(p0, t0); p.pan.linearRampToValueAtTime(p1, t1); n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(p); p.connect(dry);
+  }
+  function crackleBed(t0, t1, lv = 0.02, to = dry) {
+    const src = ctx.createBufferSource(); src.buffer = crackleBuf(t1 - t0 + 0.05, 0.08); const hp = biq('highpass', 2500); const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + 0.2); g.gain.setValueAtTime(lv, t1 - 0.3); g.gain.linearRampToValueAtTime(0, t1);
+    src.connect(hp); hp.connect(g); out(g, { send: 0.1, to }); src.start(t0); src.stop(t1 + 0.05);
+  }
+  // cartoon "bwip" pop (pitched, rising) for items appearing
+  function pop(t, lv = 0.25, { m = 74, pan = 0, to = dry, send = 0.18 } = {}) {
+    lv *= LC('pop') * FOL(); if (!(lv > 0)) return; const f = mf(m);
+    const o = osc('sine', f * 0.5); o.frequency.setValueAtTime(f * 0.5, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.025);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1); o.connect(g); out(g, { send, pan, to }); o.start(t); o.stop(t + 0.11);
+    const o2 = osc('triangle', f * 2); const g2 = ctx.createGain(); g2.gain.setValueAtTime(0, t + 0.02); g2.gain.linearRampToValueAtTime(lv * 0.18, t + 0.023); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.09); o2.connect(g2); out(g2, { send, pan: -pan, to }); o2.start(t); o2.stop(t + 0.1);
+  }
+  function tock(t, m, lv = 0.04, pan = 0) {
+    const o = osc('sine', mf(m)); const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv * FOL(), t + 0.001); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045); o.connect(g); out(g, { pan, send: 0.15 }); o.start(t); o.stop(t + 0.05);
+  }
+  // desk/service bell "ding" (inharmonic partials + strike)
+  function ding(t, m, lv = 0.08, pan = 0.1) {
+    lv *= LC('ding'); if (!(lv > 0)) return; const f = mf(m);
+    for (const [r, a, d] of [[1, 1, 1.9], [2.32, 0.45, 1.1], [4.25, 0.22, 0.6], [6.63, 0.1, 0.3]]) { const o = osc('sine', f * r, (rnd() - 0.5) * 3); const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv * a, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(g); out(g, { pan, send: 0.45 }); o.start(t); o.stop(t + d + 0.02); }
+    const n = noise(t, t + 0.01); const hp = biq('highpass', 5000); const g = ctx.createGain(); g.gain.setValueAtTime(lv * 0.6, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.006); n.connect(hp); hp.connect(g); out(g, { pan, send: 0.2 });
+  }
+  // big hit: kick + 808 boom + crash + noise burst + chord stab (+ paper slam / two outward rips)
+  function bigHit(t, size, chord, { rip = 0, slap = 0, crashLv = 0.12, ripLen = 0.3 } = {}) {
+    size *= LC('hit'); if (!(size > 0)) return;
+    kick(t, 1.0 * size, { to: HIT, f0: 180, f1: 42, dur: 0.5, click: 0.3, sat: 2.3 });
+    boom(t, 0.9 * size, 1.3, { to: HIT });
+    crash(t, crashLv * size, 2.0, HIT);
+    { const n = noise(t, t + 0.45); const lp = biq('lowpass', 4500); lp.frequency.setValueAtTime(4500, t); lp.frequency.exponentialRampToValueAtTime(350, t + 0.4); const ng = ctx.createGain(); ng.gain.setValueAtTime(0.34 * size, t); ng.gain.setTargetAtTime(0.0001, t + 0.06, 0.09); n.connect(lp); lp.connect(ng); out(ng, { send: 0.4, to: HIT }); }
+    if (chord) { clav(KS(chord.v.slice(1).map((m) => m + 12)), t, 0.08 * size, { dec: 0.35, to: HIT, send: 0.4 }); keys(KS(chord.v), t, 1.2, 0.055 * size, { to: HIT, send: 0.5 }); bassNote(K(chord.r), t, 0.4, 0.22 * size, { to: HIT }); }
+    if (slap) paperSlap(t, slap * size, { size: 2.2, send: 0.25, to: HIT });
+    if (rip) { paperRip(t, ripLen, rip * size, { p0: 0, p1: -0.85, to: HIT }); paperRip(t + 0.012, ripLen * 0.92, rip * 0.85 * size, { p0: 0.05, p1: 0.85, onset: 0.6, to: HIT }); }
+  }
+
+  function paper() {
+    // harmony (pre-transposition; key=+2 → E): D-dorian funk vamp, climax Bb–C–Dm–G, build on A7 (deceptive → Bb), final D6/9
+    const CH = {
+      Dm9: { r: 38, v: [53, 57, 60, 64], third: 3, sev: 10 }, G13: { r: 31, v: [53, 57, 59, 64], third: 4, sev: 10 },
+      BbM9: { r: 34, v: [57, 60, 62, 65], third: 4, sev: 11 }, C69: { r: 36, v: [55, 57, 62, 64], third: 4, sev: 9 },
+      A7s: { r: 33, v: [55, 62, 64, 69], third: 5, sev: 10 }, A7: { r: 33, v: [55, 61, 64, 69], third: 4, sev: 10 },
+      D69: { r: 38, v: [54, 57, 59, 64], third: 4, sev: 9 },
+    };
+    // funk bass [16th, interval|'T'|'S', len16, vel]; steps 14/15 walk chromatically into the next root
+    const BASS = [[0, 0, 2, 1], [3, 0, 1, 0.5], [4, 12, 1, 0.8], [6, 'S', 1, 0.7], [7, 12, 1, 0.55], [8, 0, 2, 0.95], [10, 7, 1, 0.75], [11, 0, 1, 0.45], [12, 'T', 2, 0.85], [14, 7, 1, 0.7], [15, 12, 1, 0.6]];
+    const CLAV = [[2, 0.75], [3, 0.45], [6, 0.7], [10, 0.6], [11, 0.45], [14, 0.85]];
+    const HOOK = [
+      [[0, 74, 2], [3, 72, 1], [4, 74, 2], [6, 77, 3], [10, 74, 2], [12, 72, 2], [14, 69, 2]],
+      [[0, 72, 2], [3, 69, 1], [4, 72, 2], [6, 76, 3], [10, 74, 2], [12, 72, 2], [14, 67, 2]],
+      [[0, 69, 2], [3, 72, 1], [4, 74, 2], [6, 77, 2], [8, 79, 2], [10, 81, 4], [14, 79, 2]],
+      [[0, 77, 2], [2, 76, 2], [4, 74, 2], [6, 71, 2], [8, 74, 4], [12, 72, 2], [14, 71, 2]],
+    ];
+    const hookBar = (b0, idx, tEnd) => HOOK[idx % 4].map(([p, m, l]) => [b0 + p * E16 + (p % 2 ? SW : 0), K(m), l * E16 - 0.03]).filter(([t]) => t < tEnd - 0.01);
+    const DR = {
+      I: (i) => ({ k: [[0, 0.4], [10, 0.15]], s: [[4, 0.36], [12, 0.4]], g: [[7, 0.12], [15, 0.1]] }),
+      A: (i) => ({ k: [[0, 0.8], [2, 0.5], [10, 0.52]].concat(i % 2 ? [[11, 0.4]] : []), s: [[4, 0.78], [12, 0.82]], g: [[7, 0.17], [9, 0.2], [15, 0.15]] }),
+      B: (i) => ({ k: [[0, 0.8], [2, 0.5], [7, 0.38], [10, 0.6]].concat(i % 2 ? [[13, 0.4]] : []), s: [[4, 0.8], [12, 0.85]], g: [[3, 0.13], [7, 0.17], [9, 0.2], [14, 0.18], [15, 0.14]] }),
+      C: (i) => ({ k: [[0, 0.85], [2, 0.55], [6, 0.38], [10, 0.42], [11, 0.38]], s: [[4, 0.86], [12, 0.9]], g: [[7, 0.2], [9, 0.22], [15, 0.2]] }),
+    };
+    // one bar of groove. sec 'I' intro · 'A' groove A · 'B' groove B · 'C' climax. nx = next chord (bass walk-up). tEnd clips a partial bar.
+    function grooveBar(b0, sec, ch, nx, i, tEnd = b0 + BAR, { skipDown = false } = {}) {
+      const T = (k) => b0 + k * E16 + (k % 2 ? SW : 0), ok = (k) => b0 + k * E16 < tEnd - 1e-4, P = DR[sec](i);
+      for (const [k, v] of P.k) if (ok(k) && !(skipDown && k === 0)) kick(T(k), v);
+      for (const [k, v] of P.s) if (ok(k)) { snare(T(k), v * 0.62, (rnd() - 0.5) * 0.1); if (sec === 'C') clap(T(k) + 0.003, 0.26, (rnd() - 0.5) * 0.3); }
+      for (const [k, v] of P.g) if (ok(k)) snare(T(k), v * 0.62 * LC('ghost'), 0.25, { dec: 0.07, tone: 205 });
+      for (let k = 0; k < 16; k++) { if (!ok(k) || (sec === 'I' && k % 2)) continue;
+        const open = (sec === 'C' && k % 4 === 2) || (sec !== 'I' && k === 14 && i % 2 === 1);
+        hat(T(k), (open ? 0.042 : k % 4 === 2 ? 0.05 : k % 2 ? 0.022 : 0.034) * (sec === 'I' ? 0.8 : 1), k % 2 ? 0.28 : -0.12, open);
+        if (sec === 'B' || sec === 'C') shaker(T(k), k % 2 ? 0.026 : 0.016, 0.4); }
+      if (sec !== 'I') for (let bt = 0; bt < 4; bt++) if (ok(bt * 4)) pumpAt(T(bt * 4), sec === 'C' ? 0.42 : 0.35);
+      if (sec !== 'I') for (const [k, iv, l, v] of BASS) { if (!ok(k)) continue;
+        const m = (k >= 14 && nx && nx.r !== ch.r) ? nx.r - (k === 14 ? 2 : 1) : ch.r + (iv === 'T' ? ch.third : iv === 'S' ? ch.sev : iv);
+        bassNote(K(m), T(k), Math.min(l * E16 - 0.025, tEnd - T(k) - 0.02), (sec === 'C' ? 0.16 : 0.15) * v, { bright: iv === 12 ? 3200 : 2000 }); }
+      const cv = KS(ch.v.slice(1).map((m) => m + 12));
+      for (const [k, v] of CLAV) if (ok(k)) clav(cv, T(k), (sec === 'I' ? 0.032 : 0.04) * v, { pan: k % 4 === 2 ? 0.3 : -0.3, dec: k % 4 === 3 ? 0.06 : 0.11 });
+      if (ok(0)) keys(KS(ch.v), b0, sec === 'I' ? Math.min(BAR, tEnd - b0) - 0.05 : 0.9, sec === 'I' ? 0.034 : 0.028);
+      if (sec === 'I') padChord(KS(ch.v), b0, Math.min(b0 + BAR, tEnd) - 0.04, 0.03, { cut: 1400, att: 0.25, rel: 0.05, width: 1.4, send: 0.2 });
+      if ((sec === 'B' || sec === 'C') && ok(10)) keys(KS(ch.v), T(10), 0.7, 0.016);
+      if (sec === 'A' || sec === 'B') padChord(KS(ch.v), b0, Math.min(b0 + BAR, tEnd) - 0.03, 0.02, { cut: 1300, att: 0.08, send: 0.3, width: 1.2 });
+      if (sec === 'C') padChord(KS(ch.v.concat([ch.v[1] + 12])), b0, Math.min(b0 + BAR, tEnd) - 0.03, 0.022, { cut: 2600, send: 0.3, width: 1.4 });
+      if (sec === 'B') { const an = KS(ch.v.map((m) => m + 24)), P8 = [0, 2, 1, 3, 0, 3, 2, 1]; for (let k = 0; k < 8; k++) if (ok(2 * k)) pluck(an[P8[k]], T(2 * k), 0.026 * LC('arp'), k % 2 ? 0.5 : -0.5, { dec: 0.12, send: 0.2 }); }
+    }
+
+    // ================= INTRO 0 → DROP: light groove behind a closed low-pass =================
+    // groove bus level per section: intro GI (behind the low-pass) · groove GA · build → GA·1.15 · climax GC
+    const GI = 1.0, GA = 1.45, GC = 1.75;
+    G.gain.setValueAtTime(GI, 0); G.gain.setValueAtTime(GI, CUE.press); G.gain.linearRampToValueAtTime(GI * 1.4, DROP - 0.02); G.gain.linearRampToValueAtTime(GA, DROP);
+    G.gain.setValueAtTime(GA, BUILD); G.gain.linearRampToValueAtTime(GA * 1.15, VAC); G.gain.setValueAtTime(GC, LIFT - 0.01);
+    gLP.frequency.setValueAtTime(1200, 0); gLP.frequency.setValueAtTime(1200, CUE.press); gLP.frequency.exponentialRampToValueAtTime(20000, DROP - 0.005);
+    barsIn(0, DROP).forEach((b0, i) => grooveBar(b0, 'I', CH.Dm9, CH.Dm9, i, DROP));
+    crackleBed(0, DROP + 0.3, 0.02);
+    // 0.5 paper SLAP: the red ▶ plate drops, squashes and bounces (2 frames later)
+    swoosh(CUE.slap, { pre: 0.17, post: 0.01, lv: 0.06, dir: -1, f0: 2600, f1: 1000, pan: 0.2 });
+    paperSlap(CUE.slap, 0.9, { size: 1.6, send: 0.18, to: HIT }); kick(CUE.slap, 0.6, { to: HIT, f0: 120, f1: 50, dur: 0.24, click: 0.1 }); boom(CUE.slap, 0.2, 0.4, { to: HIT });
+    paperSlap(CUE.slap + 2 / 24, 0.16, { size: 0.4, pan: 0.15 });
+    // cursor slides in, presses ▶ at 1.5
+    slide(1.0, 1.45, 0.05, { p0: 0.7, p1: 0.1 });
+    uiClick(CUE.press, 0.75, 0.1); paperSlap(CUE.press + 0.004, 0.22, { size: 0.5, tone: 0.8, pan: 0.1 });
+    for (const t of [DROP - 3 * E16, DROP - 2 * E16, DROP - E16]) snare(t, 0.1 + 0.3 * (t - (DROP - 3 * E16)), -0.2, { dec: 0.08 });
+    reverseSwell(DROP, 0.45, { lv: 0.1 });
+
+    // ================= DROP 2.0: paper RIP from the centre + full groove =================
+    bigHit(DROP, 1.25, CH.Dm9, { rip: 0.9, crashLv: 0.1, ripLen: 0.32 });
+    const AB = barsIn(DROP, BUILD), VAMP = [CH.Dm9, CH.G13];
+    AB.forEach((b0, i) => { const ch = VAMP[i % 2], nx = i + 1 < AB.length ? VAMP[(i + 1) % 2] : CH.A7s, sec = b0 < MID - 1e-3 ? 'A' : 'B';
+      grooveBar(b0, sec, ch, nx, i, Math.min(b0 + BAR, BUILD), { skipDown: i === 0 }); });
+    // groove B: bell preview of the hook on the plane / desk bars
+    for (const [b0, idx] of [[MID, 2], [MID + BAR, 3]]) if (b0 < BUILD) hookBar(b0, idx, Math.min(b0 + BAR, BUILD)).forEach(([t, m]) => bell(m, t, 0.022, 0.25, 0.5, 0.45));
+
+    // 2–4 F1 car pass (Doppler), loudest at CUE.car
+    flyBy(CUE.car, DROP + 0.1, DROP + 1.95, { v: 0.17, d: 0.13, lv: 0.17, pan: 0.95, tones: [[mf(K(50)), 'sawtooth', 0.7], [mf(K(62)), 'square', 0.22], [mf(K(57)), 'sawtooth', 0.3]], lp: 3400, air: 0.9, airF: 2600, sharp: 1.5 });
+    swoosh(CUE.car + 0.03, { pre: 0.25, post: 0.3, lv: 0.1, dir: 1, f0: 600, f1: 4200 });
+    // 4–6 phone ad: soft camera shutter
+    reverseSwell(4.0, 0.3, { lv: 0.05 });
+    shutter(CUE.shutter, 0.55, 0.2);
+    // 6–8 AI realism: rising whoosh into the lens / paper iris (blades flick), ends on 8.0
+    reverseSwell(CUE.irisFrom, 0.3, { lv: 0.05 });
+    riseWhoosh(CUE.irisFrom + 0.1, CUE.iris, 0.2);
+    synthRiser(CUE.irisFrom + 0.5, CUE.iris, KS([62, 69, 74]), 0.012);
+    for (let t = CUE.iris - 1.25, k = 0; t < CUE.iris - 0.35; t += E16, k++) flick(t + (k % 2 ? SW : 0), 0.05 + 0.05 * k / 8, (k % 2 ? 0.5 : -0.5));
+    boom(CUE.iris, 0.22, 0.6);
+    // 8–10 kaleidoscope: swirl + peaking sweep on the groove, cut-outs whoosh past at 9.5
+    { const [s0, s1] = CUE.swirl; swirl(s0, s1, 0.09);
+      gSW.gain.setValueAtTime(0, s0); gSW.gain.linearRampToValueAtTime(9, s0 + 0.2); gSW.gain.setValueAtTime(9, s1 - 0.3); gSW.gain.linearRampToValueAtTime(0, s1);
+      gSW.frequency.setValueAtTime(400, s0); gSW.frequency.exponentialRampToValueAtTime(4500, s0 + (s1 - s0) * 0.55); gSW.frequency.exponentialRampToValueAtTime(600, s1); }
+    swoosh(CUE.fly - 0.12, { pre: 0.22, post: 0.15, lv: 0.13, dir: 1 }); swoosh(CUE.fly, { pre: 0.3, post: 0.2, lv: 0.2, dir: -1, f1: 6000 }); swoosh(CUE.fly + 0.14, { pre: 0.2, post: 0.18, lv: 0.12, dir: 1, f1: 3500 });
+    reverseSwell(10.0, 0.35, { lv: 0.06 });
+    // 10–12 biplane fly-by (propeller chop, Doppler), loudest at CUE.plane
+    flyBy(CUE.plane, 10.05, 11.95, { v: 0.12, d: 0.22, lv: 0.34, pan: 0.6, tones: [[mf(K(43)), 'sawtooth', 0.8], [mf(K(55)), 'square', 0.25], [mf(K(31)), 'sine', 0.6]], am: 23, amDepth: 0.6, lp: 1700, air: 0.6, airF: 1500, sharp: 1.3 });
+    // 12–14 desk: laptop drops, then items pop in (rising pitches over G13)
+    const POPN = [62, 64, 67, 69, 71, 74];
+    CUE.pops.forEach((t, i) => { const first = i === 0;
+      paperSlap(t, first ? 0.62 : 0.36, { size: first ? 1.4 : 0.7, pan: first ? 0 : (i % 2 ? 0.35 : -0.35) });
+      pop(t + 0.004, first ? 0.2 : 0.24, { m: K(POPN[i]), pan: i % 2 ? -0.3 : 0.3 });
+      if (!first) swoosh(t, { pre: 0.1, post: 0.02, lv: 0.04, dir: i % 2 ? 1 : -1, f0: 2000, f1: 900 }); });
+    // 14–15.4 magazine letters slap in on 32nds of the bar (every 1/8 s), light and tight
+    { const [l0, l1, st] = CUE.letters, SC = [62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81]; let k = 0;
+      for (let t = l0; t < l1 - 1e-4; t += st, k++) { paperSlap(t, 0.32 * LC('letter'), { size: 0.32, tone: 1.15 + 0.04 * (k % 4), pan: ((k % 5) - 2) * 0.18, send: 0.08 }); tock(t, K(SC[k % SC.length]), 0.03, ((k % 5) - 2) * -0.15); } }
+    // 16–18 thumbnail cards slap on every beat
+    { let k = 0; for (let t = CUE.cards[0]; t < CUE.cards[1] - 1e-4; t += BEAT, k++) paperSlap(t, 0.5 * LC('card'), { size: 1.0, pan: ((k % 4) - 1.5) * 0.3, send: 0.15 }); }
+
+    // ================= BUILD (BUILD → VAC): accelerating, A7sus → A7 =================
+    { const b0 = BUILD, b1 = VAC, mid = b0 + (b1 - b0) / 2;
+      for (let t = b0, k = 0; t < b1 - 1e-4; t += E16, k++) { const p = (t - b0) / (b1 - b0); bassNote(K(33 + (k % 2 ? 12 : 0) + (p > 0.66 ? 12 : 0)), t, E16 - 0.025, 0.14 + 0.06 * p); hat(t, 0.024 + 0.03 * p, k % 2 ? 0.3 : -0.3); if (k % 4 === 0) pumpAt(t, 0.4); }
+      for (const t of [b0, b0 + BEAT, b0 + 2 * BEAT, b0 + 2.5 * BEAT]) if (t < b1 - 0.01) kick(t, 0.5);
+      { let t = b0, s = E8; while (t < b1 - 0.03) { const p = (t - b0) / (b1 - b0); snare(t, (0.14 + 0.34 * p) * LC('roll'), (rnd() - 0.5) * 0.4, { dec: 0.08, tone: 180 + 160 * p }); t += s; s = Math.max(0.04, s * 0.88); } }
+      padChord(KS(CH.A7s.v), b0, mid - 0.02, 0.02, { cut: 900, cutTo: 2200 }); padChord(KS(CH.A7.v.concat([CH.A7.v[2] + 12])), mid, b1 - 0.01, 0.022, { cut: 1500, cutTo: 6000, rel: 0.02 });
+      for (let t = b0; t < b1 - 1e-4; t += E8) clav(KS((t < mid ? CH.A7s : CH.A7).v.slice(1).map((m) => m + 12)), t, 0.026 + 0.02 * (t - b0) / (b1 - b0), { dec: 0.07 });
+      synthRiser(b0, b1, KS([69, 73, 76]), 0.022);
+      riseWhoosh(b0 + 0.3, b1, 0.14);
+      revCym(b1, 1.2, 0.12); }
+
+    // ================= BREATH (VAC → LIFT): near silence =================
+    reverseSwell(LIFT, Math.min(0.12, LIFT - VAC), { lv: 0.03, to: special });
+
+    // ================= LIFT 20.0: title SLAM + crash, climax groove with the hook =================
+    bigHit(LIFT, 1.15, CH.BbM9, { slap: 0.9, crashLv: 0.15 });
+    swoosh(LIFT + 0.18, { pre: 0.12, post: 0.45, lv: 0.08, dir: 1, f0: 5000, f1: 2000, pan: 0.9 });  // strips burst outward
+    sparkle(LIFT + 0.02, 1.0, 0.016, [74, 76, 77, 79, 81]);
+    const CP = [CH.BbM9, CH.C69, CH.Dm9, CH.G13], [st0, st1] = CUE.stut;
+    barsIn(LIFT, END).forEach((b0, i) => { const ch = CP[i % 4], nx = b0 + BAR >= END - 1e-3 ? CH.D69 : CP[(i + 1) % 4], tEnd = Math.min(b0 + BAR, b0 + BAR >= END - 1e-3 ? st1 : END);
+      grooveBar(b0, 'C', ch, nx, i, tEnd, { skipDown: i === 0 });
+      const hk = hookBar(b0, i, tEnd); leadLine(hk, 0.048);
+      if (i >= 2) { leadLine(hk, 0.012, { oct: 12, pan: 0.25, bright: 5000 }); hk.forEach(([t, m]) => bell(m + 12, t, 0.011, -0.3, 0.5, 0.45)); } });
+    crash(LIFT + 2 * BAR, 0.07, 1.4);
+    scratch(LIFT + BAR - 0.25, 0.25, 0.05, { m: K(62), pan: -0.2 });
+    // 24.0 long paper RIP L → R (the band tears away), groove ducks under it, the curl flops over
+    paperRip(CUE.rip, CUE.ripLen, 1.6, { p0: -0.95, p1: 0.95, f0: 900, f1: 4800, onset: 0.7, body: 0.6, dense: 1.3, soft: 0.35, to: HIT });
+    boom(CUE.rip, 1.6, 0.8, { to: HIT }); kick(CUE.rip, 1.5, { to: HIT, f0: 150, f1: 45, dur: 0.34, click: 0.2 });
+    { const t = CUE.rip, n = noise(t, t + 0.4); const lp = biq('lowpass', 4500); lp.frequency.setValueAtTime(4500, t); lp.frequency.exponentialRampToValueAtTime(400, t + 0.35); const ng = ctx.createGain(); ng.gain.setValueAtTime(0.45, t); ng.gain.setTargetAtTime(0.0001, t + 0.06, 0.08); n.connect(lp); lp.connect(ng); out(ng, { send: 0.3, to: HIT }); } clav(KS(CH.Dm9.v.slice(1).map((m) => m + 12)), CUE.rip, 0.06, { dec: 0.3, to: HIT, send: 0.4 }); crash(CUE.rip, 0.1, 1.2, HIT);
+    { const gv = LC('groove'); gOut.gain.setValueAtTime(gv, CUE.rip + 0.03); gOut.gain.linearRampToValueAtTime(gv * 0.5, CUE.rip + 0.08); gOut.gain.setValueAtTime(gv * 0.5, CUE.rip + CUE.ripLen - 0.05); gOut.gain.linearRampToValueAtTime(gv, CUE.rip + CUE.ripLen + 0.15); }
+    paperSlap(CUE.rip + CUE.ripLen + 0.05, 0.22, { size: 0.8, pan: 0.6 });
+    // 26–27.5 stutter = 2nd render pass. 27.5 cursor click, fill into the final hit
+    uiClick(CUE.click2, 0.6, 0.15); paperSlap(CUE.click2 + 0.004, 0.18, { size: 0.5, tone: 0.8, pan: 0.15 });
+    for (let t = CUE.click2 + E16, k = 0; t < END - 1e-4; t += E16 / 2, k++) { const p = (t - CUE.click2) / (END - CUE.click2); snare(t, (0.14 + 0.34 * p) * LC('roll'), (k % 2 ? 0.3 : -0.3), { dec: 0.07, tone: 200 + 120 * p }); if (k % 2 === 0) kick(t, 0.45 + 0.3 * p); }
+    reverseSwell(END, 0.45, { lv: 0.12 }); revCym(END, 0.6, 0.12);
+
+    // ================= FINAL HIT 28.0 → tail: SUBSCRIBE slaps down, click, ding =================
+    bigHit(END, 1.4, CH.D69, { slap: 0.95, crashLv: 0.17 });
+    sparkle(END + 0.02, Math.max(0.8, DUR - END - 0.4), 0.03);
+    padChord(KS(CH.D69.v.concat([81, 86])), END, DUR - 0.4, 0.024, { cut: 2600, att: 0.02, rel: 0.4, width: 1.6, send: 0.6, to: dry });
+    keys(KS(CH.D69.v.map((m) => m + 12)), END + 0.02, 1.8, 0.03, { to: dry, send: 0.5 });
+    bassNote(K(38), END, 1.2, 0.16, { to: dry });
+    uiClick(CUE.subClick, 0.5, 0.2); pop(CUE.subClick + 0.01, 0.18, { m: K(81), pan: 0.2 });
+    ding(CUE.ding, K(88), 0.3, 0.15);
+    crackleBed(END + 0.2, DUR, 0.008);
+    master.gain.setValueAtTime(0.9, DUR - 1.1); master.gain.linearRampToValueAtTime(0.0, DUR - 0.02);
+  }
+
+  // 2nd pass: glitch stutter — the mix from CUE.stut is re-cut into 2-frame slices (each repeats the start of its beat),
+  // cycling 6 treatments = the 6 logo flash looks: clean · 3-bit crush · telephone band · octave up · dark low-pass · reversed.
+  async function stutterPass(src) {
+    const [s0, s1] = CUE.stut, slot = 2 / 24, n = Math.round((s1 - s0) / slot); if (n < 1) return src;
+    const c2 = new OfflineAudioContext(2, src.length, SR), outG = c2.createGain(); outG.connect(c2.destination);
+    const seg = (when, from, dur, { rate = 1, g = 1, fi = 0.002, fo = 0.004, dest = outG, buffer = src } = {}) => {
+      const s = c2.createBufferSource(); s.buffer = buffer; s.playbackRate.value = rate; const e = c2.createGain();
+      e.gain.setValueAtTime(fi ? 0 : g, when); if (fi) e.gain.linearRampToValueAtTime(g, when + fi); e.gain.setValueAtTime(g, when + dur - fo); e.gain.linearRampToValueAtTime(0, when + dur);
+      s.connect(e); e.connect(dest); s.start(when, from); s.stop(when + dur + 0.005);
+    };
+    const crIn = c2.createGain(); crIn.gain.value = 2.5; const crush = c2.createWaveShaper(); { const N = 8192, cv = new Float32Array(N); for (let i = 0; i < N; i++) { const x = i / (N - 1) * 2 - 1; cv[i] = Math.round(x * 6) / 6; } crush.curve = cv; }
+    const crG = c2.createGain(); crG.gain.value = 0.42; crIn.connect(crush); crush.connect(crG); crG.connect(outG);
+    const tel = c2.createBiquadFilter(); tel.type = 'bandpass'; tel.frequency.value = 1400; tel.Q.value = 0.6; const telG = c2.createGain(); telG.gain.value = 5.5; tel.connect(telG); telG.connect(outG);
+    const dark = c2.createBiquadFilter(); dark.type = 'lowpass'; dark.frequency.value = 650; dark.Q.value = 2; const darkG = c2.createGain(); darkG.gain.value = 0.95; dark.connect(darkG); darkG.connect(outG);
+    const beats = Math.ceil((s1 - s0) / BEAT), REV = [];
+    for (let j = 0; j < beats; j++) { const a = Math.round((s0 + j * BEAT) * SR), len = Math.round(slot * SR), b = new AudioBuffer({ length: len, numberOfChannels: 2, sampleRate: SR });
+      for (let c = 0; c < 2; c++) { const d = src.getChannelData(c), o = b.getChannelData(c); for (let i = 0; i < len; i++) o[i] = d[a + len - 1 - i] || 0; } REV.push(b); }
+    const gv = LC('stutter');
+    seg(0, 0, s0, { fi: 0, fo: 0.003 });
+    for (let k = 0; k < n; k++) {
+      // every slot re-triggers the downbeat; pitch holds on beat 1, climbs a semitone per slot on beat 2, two per slot on beat 3
+      const when = s0 + k * slot, beat = Math.floor((k * slot) / BEAT + 1e-6), st = k % 6, dur = slot * (st === 3 ? 0.75 : 0.9);
+      const kb = k - Math.round(beat * BEAT / slot), semi = beat === 0 ? 0 : beat === 1 ? kb : 6 + 2 * kb, rate = Math.pow(2, (semi + (st === 3 ? 12 : 0)) / 12);
+      if (st === 5) seg(when, 0, dur, { buffer: REV[0], g: gv * 0.68 });
+      else seg(when, s0, dur, { rate, g: gv * (st === 3 ? 1.0 : 0.8), dest: [outG, crIn, tel, outG, dark][st] });
+    }
+    seg(s1 - 0.008, s1 - 0.008, src.duration - s1 + 0.008, { fi: 0.003, fo: 0.002 });
+    return await c2.startRendering();
+  }
+  // look-ahead brickwall limiter (in place): gain = box-smoothed moving-min of the needed gain, exponential release
+  function limitInPlace(L, R, ceil, look, relSec) {
+    const n = L.length, need = new Float32Array(n), mn = new Float32Array(n), dq = new Int32Array(n); let h = 0, t = 0;
+    for (let i = 0; i < n; i++) { const a = Math.max(Math.abs(L[i]), Math.abs(R[i])); need[i] = a > ceil ? ceil / a : 1; }
+    for (let i = n - 1; i >= 0; i--) { while (t > h && need[dq[t - 1]] >= need[i]) t--; dq[t++] = i; while (dq[h] > i + look) h++; mn[i] = need[dq[h]]; }
+    const rel = 1 - Math.exp(-1 / (SR * relSec)); let acc = 0, env = 1, reduced = 0;
+    for (let i = 0; i < n; i++) { acc += mn[i]; if (i > look) acc -= mn[i - look - 1]; const box = acc / Math.min(i + 1, look + 1); env = Math.min(box, env + (1 - env) * rel); if (env < 0.999) reduced++; L[i] *= env; R[i] *= env; }
+    return reduced / SR;
+  }
+
+  // ---------- arrangement (generic, driven by CFG + preset) ----------
+  const PRE = {
+    arrival: { choir: 1, chops: 1, taiko: 1, alien: 1, ost: 1, blips: 1, trem: 1, brass: 1, glitch: 1, whisper: 1, creak: 1, sub: 1, tick: 1, impact: 1 },
+    pulse:   { choir: 0.45, chops: 1.15, taiko: 0.8, alien: 0, ost: 1.2, blips: 1.4, trem: 0.4, brass: 0.6, glitch: 1.3, whisper: 0, creak: 0.4, sub: 1.15, tick: 1.3, impact: 0.9 },
+    organic: { choir: 1.1, chops: 0.55, taiko: 0.35, alien: 0.4, ost: 0.6, blips: 0.6, trem: 1.2, brass: 0.7, glitch: 0, whisper: 1.4, creak: 0.8, sub: 0.6, tick: 0.6, impact: 0.6 },
+    luxury:  { choir: 1.0, chops: 0.3, taiko: 0.2, alien: 0.3, ost: 0.4, blips: 0.4, trem: 0.8, brass: 0.9, glitch: 0, whisper: 0.6, creak: 0, sub: 0.7, tick: 0.35, impact: 0.8 },
+  }[CFG.preset] || {};
+  const LV = (k) => PRE[k] ?? 1;
+  const K = (m) => m + CFG.key, KS = (arr) => arr.map(K);
+  const E8 = BEAT / 2, E16 = BEAT / 4;
+  const grid = (t0, t1, step) => { const a = []; for (let t = t0; t < t1 - 1e-6; t += step) a.push(+t.toFixed(4)); return a; };
+  const barsIn = (t0, t1) => { const a = []; for (let b = t0; b < t1 - 1e-3; b += BAR) a.push(+b.toFixed(4)); return a; };
+  const CHOPS = [[62, 64, 65, 69], [58, 62, 65, 72], [55, 58, 62, 69], [57, 62, 64, 71]].map(KS);
+  const PADS = [[50, 57, 62, 65], [46, 53, 58, 65], [43, 50, 58, 62], [45, 52, 57, 64]].map(KS);
+  const BIG = [[50, 57, 62, 65, 69, 76], [46, 53, 62, 65, 69, 74], [43, 50, 58, 62, 67, 69], [45, 52, 57, 61, 64, 69]].map(KS);
+  const FIN = KS([50, 57, 62, 66, 69, 74, 78]);
+  const OST = KS([50, 50, 53, 50, 52, 50, 45, 50, 50, 53, 55, 53, 52, 50, 45, 48]);
+  const MORPH = [[0, 'ah'], [BAR * 0.45, 'eh'], [BAR * 0.8, 'oo'], [BAR, 'ah']];
+  const BUILD = CFG.build != null ? CFG.build : Math.max(DROP + BAR, VAC - 3 * BEAT);
+  const MID = CFG.mid != null ? CFG.mid : DROP + Math.max(1, Math.floor((BUILD - DROP) / BAR / 2)) * BAR;
+  const A = barsIn(DROP, MID), B = barsIn(MID, BUILD), C = barsIn(LIFT, END);
+
+  if (PAPER) paper(); else {
+
+  // breath
+  drone(0, VAC + 0.05, KS([26, 38, 45]), 0.03);
+  chord(KS([62, 64, 69]), 0.1, DROP - 0.02, { vowel: 'oo', level: 0.06 * LV('choir'), att: Math.min(1.4, DROP * 0.7), rel: 0.05, send: 0.8 });
+  if (LV('alien')) { alien(0.05, DROP - 0.05, 1760, 440, 0.035 * LV('alien'), -0.5); alien(DROP * 0.2, DROP - 0.05, 220, 880, 0.03 * LV('alien'), 0.5); heptapod(DROP * 0.25, Math.min(1.4, DROP * 0.7), K(70), K(46), 0.12 * LV('alien'), -0.3); }
+  if (LV('whisper')) whisper(0.2, DROP - 0.1, 0.05 * LV('whisper'));
+  blips(0.3, DROP - 0.1, 2.5, 0.02 * LV('blips'));
+  reverseSwell(DROP, Math.min(1.4, DROP * 0.7), { lv: 0.4 }); revCym(DROP, Math.min(1.2, DROP * 0.6), 0.3);
+  for (const t of grid(BEAT / 2, DROP - 0.1, BEAT / 2)) tick(t, (0.015 + rnd() * 0.01) * LV('tick'), (rnd() - 0.5));
+  impact(DROP, 1.1 * LV('impact'), KS([50, 57, 62, 65, 69]));
+
+  // pulse A
+  A.forEach((b0, i) => {
+    const c = i % 4;
+    choirMorph(PADS[c].concat([PADS[c][2] + 12]), b0, b0 + BAR - 0.02, MORPH, { level: 0.1 * LV('choir'), att: 0.04, rel: 0.25, send: 0.7 });
+    chops(CHOPS[c], b0, b0 + BAR, grid(b0, b0 + BAR, E8), { level: 0.3 * LV('chops'), accent: (t) => ((Math.round((t - b0) / E8)) % 4 === 0 ? 1 : 0.6) });
+    for (const k of [0, 3, 6]) sub(b0 + k * E8, { lv: 0.6 * LV('sub') });
+    if (LV('taiko')) { taiko(b0 + BEAT, 0.6 * LV('taiko')); taiko(b0 + 2 * BEAT, 0.75 * LV('taiko')); taiko(b0 + 3 * BEAT, 0.6 * LV('taiko')); if (i % 2) { taiko(b0 + 3.5 * BEAT, 0.55 * LV('taiko')); taiko(b0 + 3.75 * BEAT, 0.6 * LV('taiko')); } }
+    for (const t of grid(b0, b0 + BAR, E16)) tick(t, (Math.round((t - b0) / E16) % 2 ? 0.035 : 0.06) * LV('tick'), (rnd() - 0.5) * 0.8);
+    whoosh(b0 + BAR, 0.45, 0.3, i % 2 ? -1 : 1); revCym(b0 + BAR, 0.6, 0.18);
+    if (i > 0) impact(b0, 0.5 * LV('impact'));
+    if (LV('glitch')) glitch(b0 + BAR - 2 * E16, CHOPS[c], 2 * E16, 0.15 * LV('glitch'));
+    if (LV('alien')) { heptapod(b0, 1.0, K(58 + (i % 2) * 3), K(39), 0.13 * LV('alien'), i % 2 ? 0.4 : -0.4); heptapod(b0 + 2 * BEAT, 0.8, K(82), K(55), 0.08 * LV('alien'), i % 2 ? -0.5 : 0.5); }
+  });
+  if (A.length) { tremolo(KS([50, 57, 62]), DROP, MID, 0.045 * LV('trem'), 12); brass(KS([38, 45]), Math.max(DROP, MID - 2 * BAR), MID, 0.1 * LV('brass')); blips(DROP, MID, 3, 0.022 * LV('blips')); }
+  if (LV('ost')) ostinato(DROP, MID, OST, 0.05 * LV('ost'));
+
+  // pulse B (denser)
+  B.forEach((b0, i) => {
+    const c = i % 4;
+    choirMorph(PADS[c].concat(PADS[c].slice(2).map((m) => m + 12)), b0, b0 + BAR - 0.02, MORPH, { level: 0.065 * LV('choir'), att: 0.03, rel: 0.25, send: 0.75, width: 1.4 });
+    chops(CHOPS[c], b0, b0 + BAR, grid(b0, b0 + BAR, E16), { level: 0.2 * LV('chops'), decay: 0.03, accent: (t) => { const k = Math.round((t - b0) / E16); return k % 4 === 0 ? 1 : k % 2 ? 0.45 : 0.7; } });
+    for (const k of [0, 3, 6, 8, 11, 14]) sub(b0 + k * E8, { lv: 0.55 * LV('sub') });
+    if (LV('taiko')) for (const [bt, lv] of [[1, 0.6], [2, 0.5], [3, 0.65], [3.5, 0.5], [3.75, 0.55]]) taiko(b0 + bt * BEAT, lv * LV('taiko'));
+    for (const t of grid(b0, b0 + BAR, E16)) tick(t, (0.05 + (Math.round((t - b0) / E16) % 4 === 2 ? 0.035 : 0)) * LV('tick'), (rnd() - 0.5) * 0.9);
+    whoosh(b0 + BAR, 0.4, 0.33, i % 2 ? 1 : -1); revCym(b0 + BAR, 0.7, 0.22);
+    impact(b0, 0.7 * LV('impact'));
+    if (LV('glitch')) { glitch(b0 + 1.75 * BEAT, CHOPS[c], E16, 0.14 * LV('glitch')); glitch(b0 + BAR - 2 * E16, CHOPS[c], 2 * E16, 0.17 * LV('glitch')); }
+    if (LV('alien')) { heptapod(b0, 1.0, K(61), K(39), 0.13 * LV('alien'), -0.4); heptapod(b0 + 2 * BEAT, 0.8, K(82), K(55), 0.08 * LV('alien'), 0.5); }
+  });
+  if (B.length) { brass(KS([38, 45]), MID, Math.min(BUILD, MID + 2 * BAR), 0.12 * LV('brass')); brass(KS([34, 41]), Math.min(BUILD, MID + 2 * BAR), BUILD, 0.14 * LV('brass')); tremolo(KS([62, 69]), MID, BUILD, 0.03 * LV('trem'), 16); blips(MID, BUILD, 4, 0.025 * LV('blips')); }
+  if (LV('ost')) { ostinato(MID, BUILD, OST.map((m) => m + 12), 0.055 * LV('ost')); ostinato(BUILD, VAC, OST.map((m) => m + 12), 0.06 * LV('ost')); }
+
+  // build → vacuum
+  riser(BUILD, VAC, 0.45); revCym(VAC, VAC - BUILD, 0.35);
+  choirMorph(KS([62, 65, 69, 74, 77]), BUILD, VAC - 0.02, [[0, 'oo'], [VAC - BUILD, 'ah']], { level: 0.06 * LV('choir'), att: (VAC - BUILD) * 0.8, rel: 0.02, send: 0.6 });
+  { const ts = []; let t = BUILD, s = E16; while (t < VAC - 0.02) { ts.push(t); t += s; s = Math.max(0.04, s * 0.9); }
+    chops(KS([62, 65, 69, 74]), BUILD, VAC, ts, { level: 0.2 * LV('chops'), decay: 0.022, accent: (x) => 0.5 + 0.5 * (x - BUILD) / (VAC - BUILD) });
+    ts.forEach((x) => tick(x, (0.04 + 0.06 * (x - BUILD) / (VAC - BUILD)) * LV('tick'), (rnd() - 0.5)));
+    if (LV('taiko')) ts.filter((_, i) => i % 2 === 0).forEach((x) => taiko(x, (0.25 + 0.4 * (x - BUILD) / (VAC - BUILD)) * LV('taiko'))); }
+  for (const f of [0, 0.5, 0.75, 0.875]) sub(BUILD + f * (VAC - BUILD), { lv: 0.85 * LV('sub') });
+  reverseSwell(LIFT, Math.max(0.2, LIFT - VAC), { lv: 0.6, to: special });
+
+  // climax
+  impact(LIFT, 1.4 * LV('impact'), BIG[0]);
+  C.forEach((b0, i) => {
+    const c = i % 4;
+    choirMorph(BIG[c], b0, b0 + BAR - 0.02, MORPH, { level: 0.11 * LV('choir'), att: 0.03, rel: 0.25, send: 0.8, width: 1.4 });
+    chops(BIG[c].slice(2).map((m) => m + 12), b0, b0 + BAR, grid(b0, b0 + BAR, E16), { level: 0.16 * LV('chops'), decay: 0.028, accent: (t) => { const k = Math.round((t - b0) / E16); return k % 4 === 0 ? 1 : k % 2 ? 0.4 : 0.65; } });
+    for (const k of [0, 3, 6, 8, 11, 14]) sub(b0 + k * E8, { lv: 0.6 * LV('sub') });
+    if (LV('taiko')) for (const [bt, lv] of [[1, 0.7], [2, 0.55], [3, 0.75], [3.5, 0.6], [3.75, 0.65]]) taiko(b0 + bt * BEAT, lv * LV('taiko'));
+    for (const t of grid(b0, b0 + BAR, E16)) tick(t, (0.07 + (Math.round((t - b0) / E16) % 2 ? 0 : 0.035)) * LV('tick'), (rnd() - 0.5));
+    if (i < C.length - 1) { whoosh(b0 + BAR, 0.4, 0.36, i % 2 ? -1 : 1); revCym(b0 + BAR, 0.7, 0.25); }
+    if (i > 0) impact(b0, 0.85 * LV('impact'));
+    if (LV('glitch')) glitch(b0 + BAR - 2 * E16, BIG[c], 2 * E16, 0.16 * LV('glitch'));
+    if (LV('alien')) { heptapod(b0, 1.2, K(55), K(36), 0.16 * LV('alien'), -0.3); heptapod(b0 + 2 * BEAT, 0.9, K(92), K(61), 0.1 * LV('alien'), 0.4); heptapod(b0 + 3 * BEAT, 0.45, K(110), K(73), 0.07 * LV('alien'), -0.6); }
+    if (LV('creak')) creak(b0 + 1.5 * BEAT, 0.12 * LV('creak'));
+  });
+  if (C.length) { const half = LIFT + Math.ceil(C.length / 2) * BAR; brass(KS([38, 45, 50]), LIFT, Math.min(END - 0.1, half), 0.13 * LV('brass')); brass(KS([31, 38, 43]), Math.min(END - 0.1, half), END - 0.1, 0.15 * LV('brass')); tremolo(KS([62, 69, 74]), LIFT, END - 0.1, 0.03 * LV('trem'), 16); blips(LIFT, END - 0.2, 5, 0.03 * LV('blips')); if (LV('ost')) { ostinato(LIFT, END - 0.1, OST, 0.06 * LV('ost')); ostinato(LIFT, END - 0.1, OST.map((m) => m + 12), 0.045 * LV('ost')); } }
+  if (LV('creak')) for (let t = DROP + 0.75 * BAR / 2; t < VAC; t += BAR / 2) if (rnd() < 0.7) creak(t + (rnd() < 0.5 ? 0 : 1.5 * E8), 0.1 * LV('creak'));
+  for (const b of [...A.filter((_, i) => i % 2), ...B.filter((_, i) => i % 2), ...C.slice(1), END]) shimmer(b, 0.9, 0.025);
+  drone(LIFT, DUR, KS([26, 38]), 0.04);
+  reverseSwell(END, 0.75, { lv: 0.55 }); revCym(END, 1.0, 0.35);
+
+  // final hit + tail (major third: the hopeful turn)
+  impact(END, 1.5 * LV('impact'), FIN);
+  if (LV('alien')) heptapod(END, Math.min(2.0, DUR - END), K(49), K(31), 0.2 * LV('alien'), 0);
+  choirMorph(KS([62, 66, 69, 74, 78, 81]), END + 0.02, Math.max(END + 0.3, DUR - 0.7), [[0, 'ah'], [1.3, 'oo']], { level: 0.07 * LV('choir'), att: 0.05, rel: 0.7, send: 0.95, width: 1.5 });
+  alien(END + 0.1, DUR - 0.1, 880, 1760, 0.02 * (LV('alien') || 0.5), 0); if (LV('whisper')) whisper(END + 0.4, DUR - 0.2, 0.03);
+  master.gain.setValueAtTime(0.9, DUR - 0.45); master.gain.linearRampToValueAtTime(0.0, DUR);
+  } // end generic arrangement
+
+  let buf = await ctx.startRendering();
+  { const PD = Math.round(0.006 * SR); for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); d.copyWithin(0, PD); d.fill(0, d.length - PD); } }   // undo the compressor's 6 ms look-ahead → events land on film time
+  // paper: scale by a FIXED reference (the pass-1 peak of the tuned mix) instead of the running peak, so changing one hit never moves the rest of the mix
+  if (PAPER) { const sc = 1 / (CFG.ref ?? 4.56); for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] *= sc; } }
+  if (PAPER && CFG.stutter !== 0) buf = await stutterPass(buf);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1); let pk = 0; for (let i = 0; i < L.length; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+  window.__peak = pk; window.__limited = 0;
+  if (PAPER) { // push `drive` dB (on top of the fixed 1/ref scaling) into the look-ahead limiter (1.5 ms look-ahead, `rel` s release)
+    const drv = Math.pow(10, (CFG.drive ?? 15.2) / 20); for (let i = 0; i < L.length; i++) { L[i] *= drv; R[i] *= drv; }
+    window.__limited = limitInPlace(L, R, 1.0, Math.round(SR * 0.0015), CFG.rel ?? 0.012);
+    pk = 0; for (let i = 0; i < L.length; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+  }
+  // normalise (paper: to CFG.ceil dBFS, default -2.2 so the AAC encode's transient overshoot stays under -1 dBFS; others -1 dBFS) and encode 16-bit WAV
+  const k = PAPER ? Math.pow(10, (CFG.ceil ?? -2.2) / 20) : 0.89 / (pk || 1), n = L.length, bytes = new Uint8Array(44 + n * 4), dv = new DataView(bytes.buffer);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) bytes[o + i] = s.charCodeAt(i); };
+  ws(0, 'RIFF'); dv.setUint32(4, 36 + n * 4, true); ws(8, 'WAVE'); ws(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true); dv.setUint32(24, SR, true); dv.setUint32(28, SR * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) { dv.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i] * k)) * 32767, true); dv.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i] * k)) * 32767, true); }
+  window.__wav = bytes;
+  window.__chunk = (i, size) => { const s = bytes.subarray(i * size, (i + 1) * size); let b = ''; for (let j = 0; j < s.length; j += 0x8000) b += String.fromCharCode.apply(null, s.subarray(j, j + 0x8000)); return btoa(b); };
+  window.__done = true;
+})().catch((e) => { window.__err = String(e && e.stack || e); });
+</script></body></html>
