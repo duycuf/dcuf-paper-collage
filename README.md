@@ -42,10 +42,10 @@ or call `/dcuf-paper-collage` directly. Claude asks for the brand name and where
 Examples: `skills/dcuf-paper-collage/assets/examples/` (a fictional Vietnamese tea shop "Trà Mộc", a 12 s chapter story, 16 s horizontal and vertical versions).
 
 ## Credits
-- The core (canvas collage engine, the kaye.creatives 10 s sample film, the render tools, the frame-by-frame analysis of the San Diego Zoo "Africa Rocks" ad) comes from the **"paper-collage-film"** skill shared online **without an author or licence**. All credit for that work belongs to its original author.
+- Based on the **"paper-collage-film"** skill by **Kaye ([kaye.creatives](https://www.youtube.com/@Kaye.creates))**, shared in the video [How To Make Insane Motion Graphics With Opus 5.5 (Claude Motion)](https://www.youtube.com/watch?v=AsvN_feasyY). The canvas collage engine, render tools, the San Diego Zoo "Africa Rocks" analysis and the bundled 10 s / 30 s sample films (Kaye's channel intro) are Kaye's work, and all credit for them is theirs. Go watch the video.
 - This version adds: Windows support, free stock photos + local cut-outs instead of AI image generation, one config file for any brand, vertical 9:16, palettes from brand colours, Vietnamese fonts, photo credits, a guided Q&A in the user's language.
-- **If you are the original author:** open an issue here to be credited, change the licence, or ask for removal, and I'll do it right away.
-- No open licence yet because the core's licence is unknown: use it freely for your own videos, but please don't resell the skill.
+- **Kaye:** if you'd like different credit, a licence, or this repo taken down, open an issue and I'll do it right away.
+- No open licence yet because the original was shared without one: use it freely for your own videos, but please don't resell the skill.
 - Fonts in `comp/fonts/` are Google Fonts (SIL OFL / Apache 2.0). Photos you download while using it have their own licences: see `cutouts/credits_all.md` in your project and credit CC BY / BY-SA photos in the video description.
 
 ## Tiếng Việt
@@ -55,3 +55,4 @@ Skill cho Claude Code làm video cắt dán giấy xé 10–16 giây (intro kên
 - **Cài:** trong Claude Code gõ hai lệnh ở mục [Install](#install), hoặc chép thư mục `skills/dcuf-paper-collage` vào `C:\Users\<tên>\.claude\skills\`.
 - **Dùng:** nói tiếng Việt bình thường, ví dụ "Làm video cắt dán 10 giây giới thiệu tiệm trà sữa của mình, có bản dọc cho TikTok". Claude sẽ hỏi bằng tiếng Việt, mỗi lần một câu, rồi gửi kịch bản, bảng màu, bảng font và bản nháp để bạn duyệt.
 - Máy cần Node.js ≥ 22, ffmpeg, Chrome/Edge và uv; thiếu gì Claude hỏi rồi cài giúp.
+- Dựa trên skill gốc của **kaye.creatives**, xem video hướng dẫn: [How To Make Insane Motion Graphics With Opus 5.5 (Claude Motion)](https://www.youtube.com/watch?v=AsvN_feasyY).
