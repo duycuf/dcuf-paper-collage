@@ -15,7 +15,7 @@ Photosensitivity: the ref's logo flicker is full-frame at 12 Hz; for YouTube kee
 
 # Lessons from the first brand re-skins (portfolio intros, 2026-10-19)
 
-9. **Propose, then wait.** The user picking an option ("cái 2") is a choice, not a go-ahead: send the plan or sketch and wait for "làm đi". Thinking out loud with them (brainstorm) means proposals only.
+9. **Propose, then wait.** The user picking an option ("option 2") is a choice, not a go-ahead: send the plan or sketch and wait for an explicit "go ahead". Thinking out loud with them (brainstorm) means proposals only.
 10. **What they do, not their journey.** A portfolio/brand film shows what the brand makes and for whom, not a career timeline. Keep the list short (3 things); merge sub-services into one ("AI creative", not video + photo + landing page).
 11. **Metaphor with real objects, not screenshots.** Each service = one real object + a paper tag (phone ringing = AI agent, cash register printing a receipt = automation). Only one screen in the film (the desk). The user rejected real work screenshots: the original kaye film limits screens too.
 12. **Brand colours flatten the collage.** A cream ground equal to the paper edges loses depth → offer brandVivid (fields in a contrasting colour) and brandDark next to the plain brand palette, on one sheet. Check the remap for a mauve cast on the engine's blues (`unblue`).

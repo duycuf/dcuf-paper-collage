@@ -1,12 +1,12 @@
 // credits.mjs — merge every cutouts/credits*.md row (written by stock_search.py get) into cutouts/credits_all.md and print
 // the attribution block to paste into the video description (CC BY / BY-SA need it; CC0, public domain, Pexels and Pixabay don't).
-//   node tools/credits.mjs [--lang vi|en]
+//   node tools/credits.mjs [--lang en|vi]   (language of the description block; default en)
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const P = dirname(dirname(fileURLToPath(import.meta.url))), D = join(P, 'cutouts');
-const lang = (process.argv.includes('--lang') ? process.argv[process.argv.indexOf('--lang') + 1] : 'vi');
+const lang = (process.argv.includes('--lang') ? process.argv[process.argv.indexOf('--lang') + 1] : 'en');
 const files = existsSync(D) ? readdirSync(D).filter((f) => /^credits.*\.md$/.test(f) && f !== 'credits_all.md') : [];
 const seen = new Set(), rows = [];
 for (const f of files) for (const line of readFileSync(join(D, f), 'utf8').split(/\r?\n/)) {
@@ -18,5 +18,5 @@ writeFileSync(join(D, 'credits_all.md'), head + rows.map((c) => `| ${c.slice(1, 
 const need = rows.filter((c) => c[5] === 'yes');
 const lic = (s) => (s.match(/\[([^\]]+)\]/) || [, s])[1];
 console.log(`${rows.length} files, ${need.length} need a credit → ${join(D, 'credits_all.md')}\n`);
-console.log(lang === 'en' ? 'Photo credits:' : 'Ảnh sử dụng (ghi công):');
+console.log(lang === 'vi' ? 'Ảnh sử dụng (ghi công):' : 'Photo credits:');
 for (const c of need) console.log(`- ${c[3] || '—'}, ${lic(c[4])}, ${c[6]}`);

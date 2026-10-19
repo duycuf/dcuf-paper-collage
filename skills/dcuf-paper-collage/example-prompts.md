@@ -1,8 +1,8 @@
-# Prompt mẫu đi kèm skill
+# Example prompts
 
-Anh gửi 18/10/2026 cùng bộ skill (ảnh chụp từ trang hướng dẫn của người chia sẻ). Đây chính là hai prompt đã tạo ra bản mẫu kaye.creatives nằm trong `assets/template/`.
+The two prompts that produced the original kaye.creatives film in `assets/examples/kaye_10s_*` (shared with the original skill).
 
-## 1 · Dựng
+## 1 · Build
 
 > I need a 10 sec launch video for my youtube channel kaye.creatives (youtube.com/@Kaye.creates), it's about AI filmmaking.
 >
@@ -14,17 +14,21 @@ Anh gửi 18/10/2026 cùng bộ skill (ảnh chụp từ trang hướng dẫn c�
 >
 > Use Fraunces Black Italic for the title, dark night sky colours with neon pink. Fun music that hits on the cuts. Throw a few agents at it so it's faster.
 
-## 2 · Hoàn thiện
+## 2 · Polish
 
 > looks good, let's polish it. make sure the music lands on the cuts, nothing covers the car or the title, no flashing on the whole screen. then render the final pls
 
-## Cách prompt này khớp với skill
+## How these map onto the skill
 
-Prompt 1 trả lời sẵn gần hết câu hỏi "Intake" của SKILL.md: tên kênh, thời lượng, ref, giới hạn generate (chỉ cutout, không người), ý tưởng từng cảnh, font, màu, nhạc. Nhờ vậy agent không phải hỏi lại. Prompt 2 là đúng ba mục trong phần "QA before sending": nhạc khớp cắt, không che vật chính/tiêu đề, không nháy toàn màn hình.
+Prompt 1 already answers almost every question in section 1 of SKILL.md: channel name, length, reference, what may be generated (object cut-outs only, no people), the idea for each beat, font, colours, music. So the agent doesn't need to ask again. Prompt 2 is exactly three items of "Check before sending": music on the cuts, nothing covers the hero or the title, no full-screen flashing.
 
-## Dùng cho kênh của anh
+## Adapting them
 
-Đổi các chỗ: tên kênh và handle, link ref (nên là file mp4 tải về), danh sách vật cần cutout, ý tưởng 4–5 nhịp, font tiêu đề (nếu chữ có dấu tiếng Việt thì chọn font có Vietnamese, ví dụ Be Vietnam Pro, Playfair Display, Lexend; font nào cũng phải xem trên Google Fonts có bộ "Vietnamese" rồi render thử bằng `font_sheet`), màu.
-- Ảnh cắt giờ lấy từ trang ảnh free rồi tách nền ngay trên máy (không tốn credit). Thay câu "Only generate stuff code can't do, like photo cutouts of …" bằng "Use free stock photos for the cutouts (a camera, an F1 car, a plane, a laptop)", hoặc gửi kèm ảnh sản phẩm của anh. Chỉ khi anh ghi rõ "dùng Higgsfield" thì skill mới generate.
-- "Throw a few agents at it" ở máy này nghĩa là anh cho phép chạy Workflow nhiều agent (tốn token hơn).
-- Máy Windows chạy được rồi (xem `NGUON.md`).
+Change: the brand / channel name and handle, the reference link (a downloaded mp4 works best), the list of objects, the idea for 4–5 beats, the title font, the colours.
+- Cut-outs now come from free stock photos, cut out on the machine (no credits). Replace "Only generate stuff code can't do, like photo cutouts of …" with "Use free stock photos for the cutouts (a camera, an F1 car, a plane, a laptop)", or attach your own product photos.
+- Title in Vietnamese (or any language with accents): pick a font that has the needed glyphs, e.g. Be Vietnam Pro, Playfair Display, Lexend; check with `fonts_fetch.mjs --check` and the font sheet.
+- "Throw a few agents at it" means you allow several agents in parallel (more tokens).
+
+Vietnamese version of prompt 1, for a shop:
+
+> Làm video 10 giây giới thiệu tiệm trà sữa của mình, kiểu cắt dán giấy xé. Có bản dọc cho TikTok. Khách đặt món qua điện thoại, cuối video là nút "Nhắn đặt ngay". Màu theo logo, chữ tiếng Việt.

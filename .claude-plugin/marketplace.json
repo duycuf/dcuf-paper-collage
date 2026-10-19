@@ -7,8 +7,8 @@
     {
       "name": "dcuf-paper-collage",
       "source": "./",
-      "description": "Video cắt dán giấy xé 10–16 giây, 16:9 + 9:16, cho bất kỳ thương hiệu nào."
+      "description": "Torn-paper collage videos (10–16 s), 16:9 + 9:16, for any brand."
     }
   ],
-  "description": "Skill Claude Code làm video cắt dán giấy xé (paper collage) cho thương hiệu, tiếng Việt."
+  "description": "A Claude Code skill for torn-paper collage brand videos. English and Vietnamese."
 }

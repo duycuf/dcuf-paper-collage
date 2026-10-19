@@ -1,47 +1,57 @@
 # dcuf-paper-collage
 
-Skill cho **Claude Code** làm video cắt dán giấy xé (paper collage) 10–16 giây: intro kênh, quảng cáo cửa hàng, giới thiệu sản phẩm, portfolio. Kiểu stop-motion "on twos", giấy xé viền trắng, ảnh vật cắt rời rơi xuống, kính vạn hoa, tựa lớn, xé trang ra logo.
+A **Claude Code** skill that makes 10–16 second torn-paper collage videos: channel intros, shop ads, product launches, portfolios. Stop-motion "on twos", ripped paper with white edges, cut-out objects dropping in, a kaleidoscope, a big title, a page tear to the logo.
 
-- Xuất cả **ngang 16:9** và **dọc 9:16** từ cùng một dự án (bố cục dọc dựng lại, không cắt khung).
-- **Không dùng AI sinh ảnh, không tốn credit**: ảnh vật lấy từ kho ảnh free (Wikimedia Commons, Openverse, Internet Archive; Pexels/Pixabay nếu có key), tách nền ngay trên máy, tự ghi nguồn ảnh.
-- **Bảng màu tự sinh** từ màu thương hiệu; chọn màu và font tựa bằng bảng hình đánh số.
-- **Font tiếng Việt** tải sẵn, đủ dấu.
-- **Nhạc tổng hợp** khớp từng nhịp, kèm tiếng giấy (đập, xé, vút).
-- Claude hỏi bằng tiếng Việt, mỗi lần một câu, người không rành kỹ thuật dùng được.
+- Renders **horizontal 16:9** and **vertical 9:16** from the same project (the vertical version is re-laid out, not cropped).
+- **No AI image generation, no credits**: object photos come from free stock sites (Wikimedia Commons, Openverse, Internet Archive; Pexels/Pixabay with your own key) and are cut out on your machine. Photo credits are collected for you.
+- **Brand palettes** generated from your brand colours; colours and title font are picked from numbered picture sheets.
+- **Fonts bundled**, including full Vietnamese glyphs, so accented titles render correctly.
+- **Synthesised music** that hits every beat, with paper foley (slaps, rips, whooshes).
+- Made for non-technical users: Claude asks one question at a time, **in your language**, with ready-made choices.
 
-## Cài đặt
+*Tiếng Việt: xem [phần cuối](#tiếng-việt).*
 
-### Cách 1: plugin (khuyên dùng)
-Trong Claude Code (cửa sổ `claude` trong terminal):
+## Install
+
+### Option 1: plugin (recommended)
+In Claude Code (the `claude` window in your terminal):
 ```
 /plugin marketplace add duycuf/dcuf-paper-collage
 /plugin install dcuf-paper-collage@dcuf-paper-collage
 ```
-Cập nhật bản mới: `/plugin marketplace update dcuf-paper-collage`.
+Update later with `/plugin marketplace update dcuf-paper-collage`.
 
-### Cách 2: chép tay
+### Option 2: manual
 ```bash
 git clone https://github.com/duycuf/dcuf-paper-collage.git
 ```
-rồi chép thư mục `skills/dcuf-paper-collage` vào `~/.claude/skills/` (Windows: `C:\Users\<tên>\.claude\skills\`).
+then copy `skills/dcuf-paper-collage` into `~/.claude/skills/` (Windows: `C:\Users\<you>\.claude\skills\`).
 
-## Máy cần có
-- Node.js ≥ 22, `ffmpeg` (có `ffprobe`), Chrome / Edge / Brave, `uv` (Python, để tìm ảnh và tách nền).
+## Requirements
+- Node.js ≥ 22, `ffmpeg` (with `ffprobe`), Chrome / Edge / Brave, `uv` (Python, for photo search and cut-outs).
 - Windows: `winget install OpenJS.NodeJS.LTS Gyan.FFmpeg astral-sh.uv`. macOS: `brew install node ffmpeg uv`.
-- Lần tách nền đầu tiên tải model khoảng 180 MB (đặt biến `U2NET_HOME` nếu muốn để model ở ổ khác).
-- Thiếu thứ gì Claude sẽ hỏi rồi cài giúp.
+- The first cut-out downloads a ~180 MB model (set `U2NET_HOME` to keep it on another drive).
+- If something is missing, Claude asks and installs it for you.
 
-## Dùng
-Mở Claude Code trong một thư mục làm việc rồi nói, ví dụ:
-> Làm video cắt dán 10 giây giới thiệu tiệm trà sữa của mình, có bản dọc cho TikTok.
+## Use
+Open Claude Code in a working folder and say, for example:
+> Make a 10-second paper collage intro for my coffee shop, with a vertical version for TikTok.
 
-hoặc gọi thẳng `/dcuf-paper-collage`. Claude sẽ hỏi tên thương hiệu, nơi đăng, rồi gửi kịch bản, bảng màu, bảng font, bản nháp để bạn duyệt trước khi xuất bản cuối.
+or call `/dcuf-paper-collage` directly. Claude asks for the brand name and where you'll post, then sends a script, colour sheet, font sheet and a draft for you to approve before the final export.
 
-Ví dụ có sẵn: `skills/dcuf-paper-collage/assets/examples/` (tiệm trà giả định "Trà Mộc", bản 12 s theo chương, bản 16 s ngang và dọc).
+Examples: `skills/dcuf-paper-collage/assets/examples/` (a fictional Vietnamese tea shop "Trà Mộc", a 12 s chapter story, 16 s horizontal and vertical versions).
 
-## Nguồn gốc
-- Phần lõi (engine canvas cắt dán, khung phim mẫu 10 s của kênh kaye.creatives, công cụ render, tài liệu phân tích quảng cáo San Diego Zoo "Africa Rocks") đến từ skill **"paper-collage-film"** được chia sẻ trên mạng, **không ghi tác giả và giấy phép**. Mọi công sức của phần đó thuộc về tác giả gốc.
-- Bản này tùy biến thêm: chạy Windows, ảnh free + tách nền thay cho AI sinh ảnh, khung dùng cho mọi thương hiệu bằng một file config, khổ dọc 9:16, bảng màu từ màu thương hiệu, font tiếng Việt, ghi công ảnh, hỏi đáp tiếng Việt.
-- **Nếu bạn là tác giả gốc:** mở một issue trong repo này để được ghi tên, đổi giấy phép, hoặc yêu cầu gỡ, mình sẽ làm ngay.
-- Repo chưa gắn giấy phép mở vì phần lõi chưa rõ giấy phép: dùng thoải mái cho video của bạn, nhưng đừng bán lại skill.
-- Font trong `comp/fonts/` là Google Fonts (giấy phép SIL OFL / Apache 2.0). Ảnh bạn tải về khi dùng có giấy phép riêng từng ảnh: xem `cutouts/credits_all.md` trong dự án của bạn và ghi công ảnh CC BY / BY-SA trong mô tả video.
+## Credits
+- The core (canvas collage engine, the kaye.creatives 10 s sample film, the render tools, the frame-by-frame analysis of the San Diego Zoo "Africa Rocks" ad) comes from the **"paper-collage-film"** skill shared online **without an author or licence**. All credit for that work belongs to its original author.
+- This version adds: Windows support, free stock photos + local cut-outs instead of AI image generation, one config file for any brand, vertical 9:16, palettes from brand colours, Vietnamese fonts, photo credits, a guided Q&A in the user's language.
+- **If you are the original author:** open an issue here to be credited, change the licence, or ask for removal, and I'll do it right away.
+- No open licence yet because the core's licence is unknown: use it freely for your own videos, but please don't resell the skill.
+- Fonts in `comp/fonts/` are Google Fonts (SIL OFL / Apache 2.0). Photos you download while using it have their own licences: see `cutouts/credits_all.md` in your project and credit CC BY / BY-SA photos in the video description.
+
+## Tiếng Việt
+
+Skill cho Claude Code làm video cắt dán giấy xé 10–16 giây (intro kênh, quảng cáo cửa hàng, giới thiệu sản phẩm, portfolio), xuất cả khổ ngang và khổ dọc. Ảnh lấy từ kho ảnh free và tách nền trên máy, không tốn credit. Font tiếng Việt có sẵn, đủ dấu.
+
+- **Cài:** trong Claude Code gõ hai lệnh ở mục [Install](#install), hoặc chép thư mục `skills/dcuf-paper-collage` vào `C:\Users\<tên>\.claude\skills\`.
+- **Dùng:** nói tiếng Việt bình thường, ví dụ "Làm video cắt dán 10 giây giới thiệu tiệm trà sữa của mình, có bản dọc cho TikTok". Claude sẽ hỏi bằng tiếng Việt, mỗi lần một câu, rồi gửi kịch bản, bảng màu, bảng font và bản nháp để bạn duyệt.
+- Máy cần Node.js ≥ 22, ffmpeg, Chrome/Edge và uv; thiếu gì Claude hỏi rồi cài giúp.

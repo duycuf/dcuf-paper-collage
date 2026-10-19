@@ -39,7 +39,7 @@ async function faces(spec) {
 
 const args = process.argv.slice(2);
 if (args[0] === '--check') {
-  for (const f of args.slice(1)) { const fs = await faces(css2(f)); console.log(fs.some((x) => x.subset === 'vietnamese') ? `✓ ${f}: có tiếng Việt` : `✗ ${f}: KHÔNG có tiếng Việt (chỉ ${[...new Set(fs.map((x) => x.subset))].join(', ')})`); }
+  for (const f of args.slice(1)) { const fs = await faces(css2(f)); console.log(fs.some((x) => x.subset === 'vietnamese') ? `✓ ${f}: has Vietnamese` : `✗ ${f}: NO Vietnamese (only ${[...new Set(fs.map((x) => x.subset))].join(', ')})`); }
 } else {
   mkdirSync(DIR, { recursive: true });
   const man = existsSync(MAN) ? JSON.parse(readFileSync(MAN, 'utf8')) : { families: [] };
